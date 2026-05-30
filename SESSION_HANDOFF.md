@@ -1,43 +1,49 @@
 # Session Handoff
 
-**Last updated:** 2026-05-30
+**Last updated:** 2026-05-31
 
 ## Where things stand
 
-Fresh XAF Blazor Server scaffold (`XAFProfiler`, DX 25.2.5, .NET 8). No domain or
-profiling code written yet. This session: **brainstormed and designed** the MiniProfiler
-POC and created the project docs.
+**MiniProfiler POC complete and runtime-verified.** All three layers proven end-to-end
+against the running app + SQL Server localdb. Solution builds clean (`dotnet build
+XAFProfiler.slnx` → 0/0). App stopped, ports free.
 
-## What this project is
+## What was built (DX XAF 25.2.5, .NET 8)
 
-A POC to integrate StackExchange MiniProfiler into XAF Blazor — proving the two things
-the WLNCentral MiniProfiler design deferred: **Blazor circuit profiling** and
-**persistent storage**. "WLNCentral, the other way around": prove the hard pattern here,
-then port back.
+- **Demo domain:** `Customer → Order → OrderLine` (`Module/BusinessObjects/Demo/`),
+  `Customer.OrdersTotal` calculated property (N+1 generator). Seeded 200 / 5999 / 33065.
+- **Layer A (HTTP+EF):** MiniProfiler packages + `AddMiniProfiler().AddEntityFramework()`
+  behind `Profiling:Enabled`, admin-gated, `<mini-profiler />` in `_Host.cshtml`.
+- **Layer B (circuit capture — core):** `Services/CircuitProfilerService.cs` +
+  `Controllers/ProfileViewController.cs` ("Profile This View"). Captures `.Step()` markers
+  over the SignalR circuit.
+- **Layer C (storage + browse):** `SqlServerStorage` (`MiniProfiler.Providers.SqlServer`),
+  `Services/ProfilerStorageInitializer.cs` (creates DB + tables), `ProfileSummary` +
+  `ProfileSummaryController` read-only XAF browse view.
 
-- Design: `docs/plans/2026-05-30-miniprofiler-poc-design.md`
-- Architecture: `ARCHITECTURE.md`
-- Task list: `TODO.md`
-- Reference (the deferred-items doc we're solving): `C:\Projects\WLNCentral\DOCS\plans\2026-04-23-miniprofiler-integration-design.md`
+## Runtime proof (Playwright, light theme)
 
-## Decisions made
+Screenshots `01`–`07` at repo root: login → home (popup) → Customer ListView (action +
+Orders Total) → "Profiled" notification → Profile Summary view → results-index → results
+detail (timing tree). SQL confirmed: 2 profiles / 17 timings with the `.Step()` names.
 
-- Demo domain: **Customer → Order → OrderLine**, seeded heavily to produce N+1 / slow
-  aggregations worth profiling.
-- Scope: **full POC + storage** — all three layers (HTTP+EF, circuit capture, SQL
-  storage + custom XAF browse view).
-- Mode: **build & run fully**, Playwright-verify end to end.
-- Build tooling: **`dotnet build`** for real builds; **mcpRoslyn `get_compilation_errors`**
-  for fast in-loop diagnostics (the Roslyn MCP server has no build tool).
+## Two findings worth remembering (see design doc "Findings")
 
-## Next step
+1. **DB-ordering:** table init must create the app DB itself (XAF makes it lazily). Fixed
+   via a `master` connection in `ProfilerStorageInitializer`.
+2. **Built-in `/profiler/results-index` empty under XAF auth** — the custom XAF browse
+   view is the reliable surface. Relevant to the WLNCentral port-back.
 
-Implementation plan via the `writing-plans` skill, then execute task-by-task.
+## Next steps
 
-## Watch out for
+- Run the negative (flag-off) check; verify dark theme.
+- Final `requesting-code-review` pass, then `finishing-a-development-branch`.
+- History note: a few early commits were duplicated/amended during parallel-agent races
+  (`19eaa3a`/`3ba3959`, `99dfc76`/`85393cc`). HEAD builds clean; consider squashing before
+  any port-back PR.
+- Port the proven pattern back to WLNCentral `Profile` branch.
 
-- Popup `<script>` may not inject into XAF's Blazor host — verify, manual
-  `RenderIncludes()` if needed.
-- `SqlServerStorage` may need its tables created.
-- Module `.csproj` is fine (verified) — the earlier "duplicated `</Project>`" was a
-  display artifact, not real.
+## Git
+
+Local repo (no remote). HEAD `87e35c5`. Branch: `master` (work was done directly on it).
+`run.log` / `build.log` gitignored.

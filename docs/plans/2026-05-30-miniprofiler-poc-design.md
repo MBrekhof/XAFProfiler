@@ -128,15 +128,45 @@ custom XAF view.
 6. **Negative:** flag off → no popup, `/profiler/results-index` 404/401.
 7. Playwright smoke test for the popup-present / popup-absent assertions.
 
-## Open Items / Risks
+## Outcome (verified 2026-05-31)
 
-- Popup `<script>` injection into XAF Blazor host (Layer A gotcha) — verify early.
-- `XAFProfiler.Module.csproj` shows duplicated `</Project>` closing tags on disk —
-  confirm it's not real corruption before first build.
-- `SqlServerStorage` requires its profiler tables; confirm auto-creation vs. needing the
-  MiniProfiler table-creation script.
+All three layers proven at runtime against the running app + SQL Server localdb:
+
+- **Layer A:** `<mini-profiler />` popup renders on the XAF Blazor host (added to
+  `_Host.cshtml` + a new `Pages/_ViewImports.cshtml` registering the tag helper).
+- **Layer B (core):** the "Profile This View" action on the Customer ListView captures a
+  circuit profile with nested `.Step()` markers — confirmed both by the in-app
+  notification and by the persisted rows
+  (`Profile: Customer ListView` → `Reload + aggregate` → `Sum OrdersTotal (N+1)`).
+- **Layer C:** `SqlServerStorage` (`MiniProfiler.Providers.SqlServer` 4.3.8) persists
+  profiles (verified: 2 profiles / 17 timings in SQL); the custom `ProfileSummary` XAF
+  view lists them and `/profiler/results?id=` renders the full timing tree.
+
+## Findings (carry these to the WLNCentral port-back)
+
+1. **Startup DB-ordering bug (found by running it).** `SqlServerStorage` tables must be
+   created, but at host-startup time the app database does not exist yet — XAF creates it
+   lazily after `app.Run()`. The table initializer therefore failed with
+   *"Cannot open database 'XAFProfiler'"*. Fix: `ProfilerStorageInitializer` now connects
+   to `master`, `CREATE DATABASE` if absent (name validated + bracket-escaped), then
+   creates the MiniProfiler tables. XAF still owns its own schema on the now-existing DB.
+2. **Built-in `/profiler/results-index` is empty under XAF auth.** That MVC endpoint is
+   gated by `ResultsListAuthorize`; XAF's auth cookie is not recognised as
+   `IsAuthenticated` by the raw endpoint, so the list returns nothing even though SQL has
+   rows. The **custom XAF browse view** avoids this entirely (reads storage directly) —
+   a concrete reason to prefer the custom view in WLNCentral.
+3. **Popup injection** needed a manual `<mini-profiler />` tag helper (the XAF host does
+   not auto-inject it) — exactly the risk the WLNCentral design flagged.
+
+## Still open (not blocking the POC)
+
+- Negative path (flag off → no popup, endpoints 404/401) not yet exercised.
+- Only light theme verified via Playwright.
+- `StopAsync` is called sync-over-async from the controller; fine for SQL/local but worth
+  revisiting under load.
 
 ## Port-back (follow-up, not this POC)
 
-Once Layers B and C are proven, fold the circuit-capture service + storage config back
-into the WLNCentral `Profile` branch, replacing that design's deferred items.
+Fold the circuit-capture service + `SqlServerStorage` config + the DB-bootstrap and
+custom browse view back into the WLNCentral `Profile` branch, replacing that design's
+deferred items. Note finding #2 when wiring auth.
