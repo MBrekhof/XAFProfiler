@@ -5,6 +5,7 @@ using DevExpress.ExpressApp.Updating;
 using DevExpress.Persistent.Base;
 using DevExpress.Persistent.BaseImpl.EF;
 using Microsoft.Extensions.DependencyInjection;
+using XAFProfiler.Module.BusinessObjects.Demo;
 
 namespace XAFProfiler.Module.DatabaseUpdate
 {
