@@ -1,7 +1,8 @@
+#nullable enable
+using DevExpress.ExpressApp.DC;
 using DevExpress.Persistent.Base;
 using DevExpress.Persistent.BaseImpl.EF;
 using System.Collections.ObjectModel;
-using System.ComponentModel;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace XAFProfiler.Module.BusinessObjects.Demo

@@ -1,3 +1,4 @@
+#nullable enable
 using DevExpress.Persistent.BaseImpl.EF;
 using System.ComponentModel.DataAnnotations.Schema;
 
