@@ -19,5 +19,8 @@ namespace XAFProfiler.Module.BusinessObjects.Demo
 
         [Aggregated]
         public virtual IList<OrderLine> Lines { get; set; } = new ObservableCollection<OrderLine>();
+
+        [NotMapped]
+        public decimal Total => Lines?.Sum(l => l.LineTotal) ?? 0m;
     }
 }

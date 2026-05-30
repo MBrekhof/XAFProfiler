@@ -12,6 +12,9 @@ namespace XAFProfiler.Module.BusinessObjects.Demo
         [Column(TypeName = "decimal(18,2)")]
         public virtual decimal UnitPrice { get; set; }
 
+        [NotMapped]
+        public decimal LineTotal => Quantity * UnitPrice;
+
         public virtual Guid? OrderId { get; set; }
 
         [ForeignKey(nameof(OrderId))]
