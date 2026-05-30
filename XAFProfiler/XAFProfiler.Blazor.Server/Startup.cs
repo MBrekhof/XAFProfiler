@@ -5,6 +5,9 @@ using DevExpress.Persistent.Base;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Http;
+using StackExchange.Profiling;
+using StackExchange.Profiling.Storage;
 using XAFProfiler.Blazor.Server.Services;
 
 namespace XAFProfiler.Blazor.Server
@@ -27,6 +30,19 @@ namespace XAFProfiler.Blazor.Server
             services.AddRazorPages();
             services.AddServerSideBlazor();
             services.AddHttpContextAccessor();
+            if (Configuration.GetValue<bool>("Profiling:Enabled"))
+            {
+                services.AddMiniProfiler(options =>
+                {
+                    options.RouteBasePath = "/profiler";
+                    options.PopupRenderPosition = StackExchange.Profiling.RenderPosition.Left;
+                    options.PopupShowTimeWithChildren = true;
+                    options.TrackConnectionOpenClose = true;
+                    options.ColorScheme = StackExchange.Profiling.ColorScheme.Auto;
+                    options.ResultsAuthorize = req => IsProfilerAuthorized(req.HttpContext);
+                    options.ResultsListAuthorize = req => IsProfilerAuthorized(req.HttpContext);
+                }).AddEntityFramework();
+            }
             services.AddScoped<CircuitHandler, CircuitHandlerProxy>();
             services.AddXaf(Configuration, builder =>
             {
@@ -70,6 +86,16 @@ namespace XAFProfiler.Blazor.Server
             });
         }
 
+        private bool IsProfilerAuthorized(HttpContext ctx)
+        {
+            if (ctx == null) return false;
+            // Dev: any authenticated user; otherwise require Administrators role.
+            var env = ctx.RequestServices.GetService<IWebHostEnvironment>();
+            if (env != null && env.IsDevelopment())
+                return ctx.User?.Identity?.IsAuthenticated == true;
+            return ctx.User?.IsInRole("Administrators") == true;
+        }
+
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
@@ -86,6 +112,10 @@ namespace XAFProfiler.Blazor.Server
             app.UseHttpsRedirection();
             app.UseRequestLocalization();
             app.UseStaticFiles();
+            if (Configuration.GetValue<bool>("Profiling:Enabled"))
+            {
+                app.UseMiniProfiler();
+            }
             app.UseRouting();
             app.UseXaf();
             app.UseEndpoints(endpoints =>

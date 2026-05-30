@@ -2,6 +2,7 @@
 @namespace XAFProfiler.Blazor.Server
 @addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
 @using DevExpress.ExpressApp.Blazor.Components
+@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
 
 <!DOCTYPE html>
 <html lang="en">
@@ -14,6 +15,10 @@
     <title>XAFProfiler</title>
     <base href="~/" />
     <component type="typeof(BootstrapThemeLink)" render-mode="Static" />
+    @if (Configuration.GetValue<bool>("Profiling:Enabled"))
+    {
+        <mini-profiler />
+    }
 </head>
 <body>
     <component type="typeof(SplashScreen)" render-mode="Static" param-Caption='"XAFProfiler"' param-ImagePath='"images/SplashScreen.svg"' />
