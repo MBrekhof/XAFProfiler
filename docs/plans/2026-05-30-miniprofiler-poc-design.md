@@ -154,11 +154,15 @@ All three layers proven at runtime against the running app + SQL Server localdb:
    *"Cannot open database 'XAFProfiler'"*. Fix: `ProfilerStorageInitializer` now connects
    to `master`, `CREATE DATABASE` if absent (name validated + bracket-escaped), then
    creates the MiniProfiler tables. XAF still owns its own schema on the now-existing DB.
-2. **Built-in `/profiler/results-index` is empty under XAF auth.** That MVC endpoint is
-   gated by `ResultsListAuthorize`; XAF's auth cookie is not recognised as
-   `IsAuthenticated` by the raw endpoint, so the list returns nothing even though SQL has
-   rows. The **custom XAF browse view** avoids this entirely (reads storage directly) —
-   a concrete reason to prefer the custom view in WLNCentral.
+2. **Built-in MiniProfiler endpoints are blocked under XAF auth.** `/profiler/results-index`
+   returns "Unauthorized" and `/profiler/results?id=<real id>` returns **"hidden"** — the
+   endpoint loads the profile but `ResultsAuthorize`/`ResultsListAuthorize` return false
+   because XAF's auth cookie is not seen as `IsAuthenticated` on the raw (non-XAF) request.
+   (A bogus id returns "not found", proving the real profile is genuinely loadable — it's
+   purely the authorize delegate withholding it.) The **custom XAF browse view** avoids this
+   entirely (reads storage directly) — a concrete reason to prefer the custom view in
+   WLNCentral. To make the built-in UI work, the authorize delegates need to recognise XAF's
+   authenticated principal.
 3. **Popup injection** needed a manual `<mini-profiler />` tag helper (the XAF host does
    not auto-inject it) — exactly the risk the WLNCentral design flagged.
 
