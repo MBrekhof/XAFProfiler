@@ -23,16 +23,22 @@ XAFProfiler.slnx` → 0/0). App stopped, ports free.
 
 ## Runtime proof (Playwright, light theme)
 
-Core deliverable (Layer B) verified end-to-end: the "Profile This View" action produced a
-circuit profile **"Profile: Customer ListView" (402 ms)** with nested markers
-`Reload + aggregate` (78 ms) → `Sum OrdersTotal (N+1)` (310 ms), and the results page flags
-**200 duplicate SQL queries** (the N+1) as child EF timings — see `07-circuit-profile-detail.png`.
-It persists in SQL across app shutdown. Screenshots `01`–`07` at repo root.
+Core deliverable (Layer B) verified at the data layer (SQL store = ground truth): the
+"Profile This View" action produced a circuit profile **"Profile: Customer ListView"
+(~3947 ms)** with nested markers `Reload + aggregate` (~3946 ms) → `Sum OrdersTotal (N+1)`
+(~3886 ms). **EF SQL is captured over the circuit** — attached as `CustomTimingsJson` child
+timings; the N+1 step holds **thousands of SQL queries (7.4 MB JSON)**, the N+1 explosion
+exactly as designed. The profile persists in SQL across app shutdown. Login/ListView
+screenshots `01`–`04` at repo root (the ListView shows the N+1 "Orders Total" column).
 
-Caveat: the custom `ProfileSummary` XAF nav view was not visually re-confirmed populated
-(the Playwright nav click flaked); it reads the same storage the results page renders, so
-the path is exercised but a clean screenshot is still owed. The built-in
-`/profiler/results-index` returns "Unauthorized" under XAF auth (documented finding #2).
+Two honest caveats (both unresolved, both documented in the design doc):
+1. The built-in `/profiler/results?id=<real id>` returns **"hidden"** in-browser — the
+   endpoint loads the profile but `ResultsAuthorize` returns false (XAF auth cookie not seen
+   as authenticated on the raw fetch); `/profiler/results-index` likewise "Unauthorized". A
+   bogus id returns "not found", proving the real profile is loadable — purely the authorize
+   delegate withholding it. Fix the delegate or use the custom XAF view.
+2. The custom `ProfileSummary` XAF nav view was not visually re-confirmed populated (nav
+   click flaked); it reads the same storage that holds the verified profile.
 
 ## Two findings worth remembering (see design doc "Findings")
 

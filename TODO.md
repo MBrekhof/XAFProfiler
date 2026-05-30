@@ -23,10 +23,16 @@ end-to-end against a running app + SQL Server localdb.
 - [x] `Services/CircuitProfilerService.cs` (scoped)
 - [x] `Controllers/ProfileViewController.cs` — "Profile This View" action
 - [x] Manual `StartNew()` / `.Step()` / `StopAsync(false)` over the SignalR circuit
-- [x] PROVEN at runtime: clicking the action persists a circuit profile (402 ms) with the
-      nested `.Step()` markers "Profile: Customer ListView" → "Reload + aggregate" (78 ms)
-      → "Sum OrdersTotal (N+1)" (310 ms), and the profiler page flags **200 duplicate SQL
-      queries** — the N+1 captured as child EF timings. Screenshot `07-circuit-profile-detail.png`.
+- [x] PROVEN at runtime (verified against the SQL store, ground truth): clicking the action
+      persists a circuit profile "Profile: Customer ListView" (~3947 ms) with nested
+      `.Step()` markers "Reload + aggregate" (~3946 ms) → "Sum OrdersTotal (N+1)" (~3886 ms).
+      EF SQL **is** captured over the circuit — attached as `CustomTimingsJson` child timings:
+      the N+1 step holds **thousands of SQL queries (7.4 MB of timing JSON)**, "Reload" a
+      handful (2.2 KB). The N+1 explosion captured exactly as intended.
+- [ ] Built-in `/profiler/results?id=<real id>` returns **"hidden"** in-browser — the endpoint
+      *loads* the profile but `ResultsAuthorize` returns false (XAF auth cookie not seen as
+      authenticated on the raw fetch). A bogus id returns "not found", proving the profile is
+      genuinely loadable. Finding #2; the in-app surface is the custom XAF `ProfileSummary` view.
 
 ## Layer C — Storage + browsing
 - [x] Configure `SqlServerStorage` (`MiniProfiler.Providers.SqlServer` 4.3.8)
@@ -38,13 +44,14 @@ end-to-end against a running app + SQL Server localdb.
 - [x] `dotnet build XAFProfiler.slnx` clean (0/0)
 - [x] Run + seed + log in as admin (admin/blank)
 - [x] Layer A popup present on home
-- [x] Layer B circuit profile with markers created + N+1 (200 dup SQL) captured — `07-circuit-profile-detail.png`
+- [x] Layer B circuit profile with markers + thousands of child SQL timings (verified in SQL)
 - [x] Layer C profile persisted to SQL, survives app shutdown (count holds with app stopped)
-- [x] Playwright smoke (light theme) — screenshots `01`–`07` at repo root
+- [x] Playwright smoke (light theme) — login/home/ListView screenshots `01`–`04` at repo root
+- [ ] Built-in `/profiler/results` page rendering — returns "hidden" in-browser (authorize delegate)
 - [ ] Negative: flag off → no popup, endpoints 404/401 (NOT yet run — see handoff)
 - [ ] Dark-theme variant (only light theme verified)
 - [ ] Custom Profile Summary XAF view: not yet visually confirmed populated (nav click flaked
-      in the Playwright run; the data path is the same storage the results page reads)
+      in the Playwright run; the data path is the same storage the verified profile lives in)
 
 ## Known findings (document for the port-back)
 - **Startup DB ordering:** `EnsureTables` must create the app DB itself (XAF creates it
