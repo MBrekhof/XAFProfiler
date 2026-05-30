@@ -41,20 +41,14 @@ namespace XAFProfiler.Blazor.Server
                     options.ColorScheme = StackExchange.Profiling.ColorScheme.Auto;
                     options.ResultsAuthorize = req => IsProfilerAuthorized(req.HttpContext);
                     options.ResultsListAuthorize = req => IsProfilerAuthorized(req.HttpContext);
-                    // Layer C, Part A (BLOCKED): the intent was
-                    //     options.Storage = new SqlServerStorage(
-                    //         Configuration.GetConnectionString("ConnectionString"));
-                    // to persist profiles to SQL Server so they survive restarts. The
-                    // concrete StackExchange.Profiling.Storage.SqlServerStorage class +
-                    // its TableCreationScripts ship in the SEPARATE
-                    // "MiniProfiler.Providers.SqlServer" NuGet package, which is NOT
-                    // referenced here (only MiniProfiler.AspNetCore[.Mvc],
-                    // MiniProfiler.EntityFrameworkCore and MiniProfiler.Shared are).
-                    // MiniProfiler.Shared exposes only the abstract SqlServerStorageBase,
-                    // not an instantiable storage. Adding a NuGet package is out of scope
-                    // for this task, so storage stays at the default in-memory
-                    // MemoryCacheStorage. See ProfilerStorageInitializer for the
-                    // (currently unused) idempotent table-creation helper.
+                    // Layer C, Part A: persist profiles to SQL Server using the SAME
+                    // connection string XAF uses, so captured profiles survive app restarts
+                    // instead of living in the default in-memory MemoryCacheStorage.
+                    // SqlServerStorage is the concrete storage from the
+                    // MiniProfiler.Providers.SqlServer package. Its tables are created at
+                    // startup by ProfilerStorageInitializer (see Configure).
+                    var profilerConn = Configuration.GetConnectionString("ConnectionString");
+                    options.Storage = new StackExchange.Profiling.Storage.SqlServerStorage(profilerConn);
                 }).AddEntityFramework();
             }
             services.AddScoped<CircuitHandler, CircuitHandlerProxy>();
@@ -132,12 +126,12 @@ namespace XAFProfiler.Blazor.Server
             if (Configuration.GetValue<bool>("Profiling:Enabled"))
             {
                 app.UseMiniProfiler();
-                // Layer C, Part A: when a concrete SqlServerStorage is wired up (see the
-                // note in ConfigureServices), call ProfilerStorageInitializer.EnsureTables
-                // here to idempotently create the MiniProfiler tables before the first
-                // profile is saved. Left commented because storage is not yet configured.
-                // ProfilerStorageInitializer.EnsureTables(
-                //     Configuration.GetConnectionString("ConnectionString"));
+                // Layer C, Part A: SqlServerStorage does NOT auto-create its tables.
+                // Idempotently create MiniProfilers / MiniProfilerTimings /
+                // MiniProfilerClientTimings here, before the first profile is saved.
+                // Guarded by Profiling:Enabled; failures are logged, not fatal.
+                ProfilerStorageInitializer.EnsureTables(
+                    Configuration.GetConnectionString("ConnectionString"));
             }
             app.UseRouting();
             app.UseXaf();

@@ -1,5 +1,6 @@
 #nullable enable
 using Microsoft.Data.SqlClient;
+using StackExchange.Profiling.Storage;
 
 namespace XAFProfiler.Blazor.Server.Services
 {
@@ -7,20 +8,12 @@ namespace XAFProfiler.Blazor.Server.Services
     /// Idempotently bootstraps MiniProfiler's SQL Server tables (MiniProfilers,
     /// MiniProfilerTimings, MiniProfilerClientTimings).
     ///
-    /// Layer C, Part A is BLOCKED: MiniProfiler's concrete
-    /// <c>StackExchange.Profiling.Storage.SqlServerStorage</c> (and its
-    /// <c>TableCreationScripts</c> DDL) live in the separate
-    /// <c>MiniProfiler.Providers.SqlServer</c> NuGet package, which is NOT referenced by
-    /// this project (only MiniProfiler.AspNetCore[.Mvc], MiniProfiler.EntityFrameworkCore
-    /// and MiniProfiler.Shared are; the latter exposes only the abstract
-    /// <c>SqlServerStorageBase</c>). Adding a NuGet package is out of scope for this task.
-    ///
-    /// This helper therefore only performs the idempotent table-existence CHECK. Once the
-    /// SQL Server provider package is referenced and
-    /// <c>options.Storage = new SqlServerStorage(conn)</c> is set in Startup, replace the
-    /// TODO below with a loop over <c>SqlServerStorage.TableCreationScripts</c> and call
-    /// this from <c>Startup.Configure</c> behind the Profiling:Enabled flag. Failures are
-    /// logged to the console, not thrown (acceptable storage fallback for a POC).
+    /// <see cref="SqlServerStorage"/> (from MiniProfiler.Providers.SqlServer) does NOT
+    /// auto-create its schema, so we run the DDL it exposes via
+    /// <see cref="SqlServerStorage.TableCreationScripts"/> only when the MiniProfilers
+    /// table is absent. Safe to call on every startup. Failures are logged to the
+    /// console, not thrown: for a POC, falling back to no persistence is acceptable
+    /// rather than crashing the app.
     /// </summary>
     public static class ProfilerStorageInitializer
     {
@@ -36,29 +29,33 @@ namespace XAFProfiler.Blazor.Server.Services
                 using var connection = new SqlConnection(connectionString);
                 connection.Open();
 
-                using var checkCmd = connection.CreateCommand();
-                checkCmd.CommandText = "SELECT OBJECT_ID('MiniProfilers')";
-                var result = checkCmd.ExecuteScalar();
-                if (result != null && result != DBNull.Value)
+                using (var checkCmd = connection.CreateCommand())
                 {
-                    // Tables already exist; nothing to do.
-                    return;
+                    checkCmd.CommandText = "SELECT OBJECT_ID('MiniProfilers')";
+                    var result = checkCmd.ExecuteScalar();
+                    if (result != null && result != DBNull.Value)
+                    {
+                        // Tables already exist; nothing to do.
+                        return;
+                    }
                 }
 
-                // TODO (unblock Part A): once MiniProfiler.Providers.SqlServer is referenced:
-                //     foreach (var script in SqlServerStorage.TableCreationScripts) {
-                //         using var createCmd = connection.CreateCommand();
-                //         createCmd.CommandText = script;
-                //         createCmd.ExecuteNonQuery();
-                //     }
-                Console.WriteLine(
-                    "[ProfilerStorageInitializer] MiniProfilers table not found, but no " +
-                    "SqlServerStorage provider is referenced; cannot create tables. " +
-                    "Profiles are not persisted to SQL Server (Part A BLOCKED).");
+                // MiniProfilers table is absent -> create the full schema. The DDL is
+                // exposed by SqlServerStorage as an INSTANCE property (TableCreationScripts),
+                // so we create a throwaway instance just to read the scripts. Each entry is
+                // a standalone CREATE TABLE statement.
+                var storage = new SqlServerStorage(connectionString);
+                foreach (var script in storage.TableCreationScripts)
+                {
+                    using var createCmd = connection.CreateCommand();
+                    createCmd.CommandText = script;
+                    createCmd.ExecuteNonQuery();
+                }
+                Console.WriteLine("[ProfilerStorageInitializer] MiniProfiler SQL Server tables created.");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ProfilerStorageInitializer] Table check failed: {ex.Message}");
+                Console.WriteLine($"[ProfilerStorageInitializer] Failed to create MiniProfiler tables: {ex.Message}");
             }
         }
     }
