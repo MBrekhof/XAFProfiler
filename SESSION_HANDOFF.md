@@ -23,9 +23,16 @@ XAFProfiler.slnx` → 0/0). App stopped, ports free.
 
 ## Runtime proof (Playwright, light theme)
 
-Screenshots `01`–`07` at repo root: login → home (popup) → Customer ListView (action +
-Orders Total) → "Profiled" notification → Profile Summary view → results-index → results
-detail (timing tree). SQL confirmed: 2 profiles / 17 timings with the `.Step()` names.
+Core deliverable (Layer B) verified end-to-end: the "Profile This View" action produced a
+circuit profile **"Profile: Customer ListView" (402 ms)** with nested markers
+`Reload + aggregate` (78 ms) → `Sum OrdersTotal (N+1)` (310 ms), and the results page flags
+**200 duplicate SQL queries** (the N+1) as child EF timings — see `07-circuit-profile-detail.png`.
+It persists in SQL across app shutdown. Screenshots `01`–`07` at repo root.
+
+Caveat: the custom `ProfileSummary` XAF nav view was not visually re-confirmed populated
+(the Playwright nav click flaked); it reads the same storage the results page renders, so
+the path is exercised but a clean screenshot is still owed. The built-in
+`/profiler/results-index` returns "Unauthorized" under XAF auth (documented finding #2).
 
 ## Two findings worth remembering (see design doc "Findings")
 

@@ -135,12 +135,16 @@ All three layers proven at runtime against the running app + SQL Server localdb:
 - **Layer A:** `<mini-profiler />` popup renders on the XAF Blazor host (added to
   `_Host.cshtml` + a new `Pages/_ViewImports.cshtml` registering the tag helper).
 - **Layer B (core):** the "Profile This View" action on the Customer ListView captures a
-  circuit profile with nested `.Step()` markers — confirmed both by the in-app
-  notification and by the persisted rows
-  (`Profile: Customer ListView` → `Reload + aggregate` → `Sum OrdersTotal (N+1)`).
+  circuit profile (402 ms) with nested `.Step()` markers
+  `Profile: Customer ListView` → `Reload + aggregate` (78 ms) → `Sum OrdersTotal (N+1)`
+  (310 ms). The `/profiler/results` page additionally flags **200 duplicate SQL queries**
+  — the N+1 walk captured as child EF timings. Verified at runtime via the SQL store and
+  the rendered results page (`07-circuit-profile-detail.png`).
 - **Layer C:** `SqlServerStorage` (`MiniProfiler.Providers.SqlServer` 4.3.8) persists
-  profiles (verified: 2 profiles / 17 timings in SQL); the custom `ProfileSummary` XAF
-  view lists them and `/profiler/results?id=` renders the full timing tree.
+  profiles; the circuit profile above survived an app shutdown (row count held with the
+  app stopped). `/profiler/results?id=` renders the full timing tree. The custom
+  `ProfileSummary` XAF view reads the same storage (its nav item was not visually
+  re-confirmed in the last Playwright pass — see Still open).
 
 ## Findings (carry these to the WLNCentral port-back)
 
@@ -162,6 +166,9 @@ All three layers proven at runtime against the running app + SQL Server localdb:
 
 - Negative path (flag off → no popup, endpoints 404/401) not yet exercised.
 - Only light theme verified via Playwright.
+- The custom `ProfileSummary` XAF browse view was not visually re-confirmed populated in the
+  final pass (the nav click flaked); it reads the same storage that the results page renders
+  correctly, so the data path is exercised, but a clean screenshot is still owed.
 - `StopAsync` is called sync-over-async from the controller; fine for SQL/local but worth
   revisiting under load.
 

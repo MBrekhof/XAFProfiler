@@ -23,8 +23,10 @@ end-to-end against a running app + SQL Server localdb.
 - [x] `Services/CircuitProfilerService.cs` (scoped)
 - [x] `Controllers/ProfileViewController.cs` — "Profile This View" action
 - [x] Manual `StartNew()` / `.Step()` / `StopAsync(false)` over the SignalR circuit
-- [x] PROVEN: clicking the action persists a profile with `.Step()` markers
-      ("Profile: Customer ListView" → "Reload + aggregate" → "Sum OrdersTotal (N+1)")
+- [x] PROVEN at runtime: clicking the action persists a circuit profile (402 ms) with the
+      nested `.Step()` markers "Profile: Customer ListView" → "Reload + aggregate" (78 ms)
+      → "Sum OrdersTotal (N+1)" (310 ms), and the profiler page flags **200 duplicate SQL
+      queries** — the N+1 captured as child EF timings. Screenshot `07-circuit-profile-detail.png`.
 
 ## Layer C — Storage + browsing
 - [x] Configure `SqlServerStorage` (`MiniProfiler.Providers.SqlServer` 4.3.8)
@@ -36,11 +38,13 @@ end-to-end against a running app + SQL Server localdb.
 - [x] `dotnet build XAFProfiler.slnx` clean (0/0)
 - [x] Run + seed + log in as admin (admin/blank)
 - [x] Layer A popup present on home
-- [x] Layer B circuit profile with markers created (notification + SQL rows)
-- [x] Layer C profile persisted to SQL, shows in custom XAF view + individual results page
+- [x] Layer B circuit profile with markers created + N+1 (200 dup SQL) captured — `07-circuit-profile-detail.png`
+- [x] Layer C profile persisted to SQL, survives app shutdown (count holds with app stopped)
 - [x] Playwright smoke (light theme) — screenshots `01`–`07` at repo root
 - [ ] Negative: flag off → no popup, endpoints 404/401 (NOT yet run — see handoff)
 - [ ] Dark-theme variant (only light theme verified)
+- [ ] Custom Profile Summary XAF view: not yet visually confirmed populated (nav click flaked
+      in the Playwright run; the data path is the same storage the results page reads)
 
 ## Known findings (document for the port-back)
 - **Startup DB ordering:** `EnsureTables` must create the app DB itself (XAF creates it

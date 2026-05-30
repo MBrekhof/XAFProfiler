@@ -32,3 +32,6 @@ build.log
 node_modules/
 
 run.log
+
+# Playwright MCP scratch (snapshots/console logs from automation runs)
+.playwright-mcp/
