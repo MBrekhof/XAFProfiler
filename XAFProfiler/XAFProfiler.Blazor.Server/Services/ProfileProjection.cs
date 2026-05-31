@@ -17,6 +17,9 @@ namespace XAFProfiler.Blazor.Server.Services
     /// </summary>
     public static class ProfileProjection
     {
+        /// <summary>The MiniProfiler custom-timing category key for EF Core / ADO SQL statements.</summary>
+        private const string SqlTimingKey = "sql";
+
         /// <summary>
         /// Builds a <see cref="ProfileSummary"/> suitable for list-view display.
         /// The <see cref="ProfileSummary.Queries"/> collection is left empty.
@@ -40,7 +43,9 @@ namespace XAFProfiler.Blazor.Server.Services
 
         /// <summary>
         /// Builds a <see cref="ProfileSummary"/> with the <see cref="ProfileSummary.Queries"/>
-        /// collection populated and ordered by total duration descending — suitable for detail view.
+        /// collection populated and ordered by grouped total duration descending — suitable for
+        /// detail view. Because each row's <see cref="ProfileQuery.DurationMs"/> is the summed
+        /// duration across executions, a query run 10×5ms outranks a single 45ms query.
         /// SQL timings with the same command text are grouped; <see cref="ProfileQuery.ExecuteCount"/>
         /// reflects how many times that query ran (the N+1 signal).
         /// </summary>
@@ -64,6 +69,7 @@ namespace XAFProfiler.Blazor.Server.Services
                 .Select(g =>
                 {
                     var query = npos.CreateObject<ProfileQuery>();
+                    query.Id = Guid.NewGuid();
                     query.Sql = g.Key.Length > 0 ? g.Key : null;
                     query.DurationMs = g.Sum(t => t.DurationMs);
                     query.ExecuteCount = g.Count();
@@ -100,7 +106,7 @@ namespace XAFProfiler.Blazor.Server.Services
 
                 // Collect SQL custom timings from this node.
                 if (timing.CustomTimings is not null &&
-                    timing.CustomTimings.TryGetValue("sql", out var sqlList) &&
+                    timing.CustomTimings.TryGetValue(SqlTimingKey, out var sqlList) &&
                     sqlList is not null)
                 {
                     foreach (var ct in sqlList)
