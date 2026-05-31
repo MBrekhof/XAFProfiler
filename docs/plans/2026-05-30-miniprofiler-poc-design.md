@@ -176,7 +176,7 @@ All three layers proven at runtime against the running app + SQL Server localdb:
    (UNVERIFIED):** XAF **Blazor** non-persistent ListViews need **DataAccessMode = Client**; the
    default mode doesn't raise `ObjectsGetting`. Candidate fix: set `ProfileSummary_ListView`
    `DataAccessMode=Client` in Model.xafml, then run and confirm rows appear. Not applied/tested.
-3. **Popup injection** needed a manual `<mini-profiler />` tag helper (the XAF host does
+4. **Popup injection** needed a manual `<mini-profiler />` tag helper (the XAF host does
    not auto-inject it) — exactly the risk the WLNCentral design flagged.
 
 ## Still open (not blocking the POC)
