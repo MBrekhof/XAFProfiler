@@ -6,256 +6,380 @@
     {
       "id": "title",
       "type": "text",
-      "x": 110,
-      "y": 24,
-      "width": 760,
-      "height": 34,
+      "x": 80,
+      "y": 28,
+      "width": 720,
+      "height": 36,
       "strokeColor": "#1e1e1e",
-      "text": "XAFProfiler — MiniProfiler in XAF Blazor Server",
-      "fontSize": 26,
-      "createdAt": "2026-05-31T06:22:43.015Z",
-      "updatedAt": "2026-05-31T06:22:43.015Z",
+      "text": "XAFProfiler — Ambient EF-Core Profiling",
+      "fontSize": 28,
+      "createdAt": "2026-05-31T19:56:21.524Z",
+      "updatedAt": "2026-05-31T19:56:21.524Z",
+      "version": 1
+    },
+    {
+      "id": "z-browser",
+      "type": "rectangle",
+      "x": 80,
+      "y": 80,
+      "width": 520,
+      "height": 82,
+      "backgroundColor": "#e7f5ff",
+      "strokeColor": "#1971c2",
+      "strokeWidth": 1,
+      "createdAt": "2026-05-31T19:56:21.525Z",
+      "updatedAt": "2026-05-31T19:56:21.525Z",
+      "version": 1
+    },
+    {
+      "id": "z-browser-lbl",
+      "type": "text",
+      "x": 96,
+      "y": 88,
+      "width": 200,
+      "height": 22,
+      "strokeColor": "#1971c2",
+      "text": "Browser",
+      "fontSize": 16,
+      "createdAt": "2026-05-31T19:56:21.525Z",
+      "updatedAt": "2026-05-31T19:56:21.525Z",
       "version": 1
     },
     {
       "id": "user",
       "type": "rectangle",
-      "x": 110,
-      "y": 120,
-      "width": 230,
-      "height": 70,
-      "backgroundColor": "#fff3bf",
+      "x": 120,
+      "y": 112,
+      "width": 440,
+      "height": 42,
+      "backgroundColor": "#ffffff",
       "strokeColor": "#1e1e1e",
       "label": {
-        "text": "Admin user — clicks\n'Profile This View'"
-      },
-      "fontSize": 15,
-      "createdAt": "2026-05-31T06:22:43.015Z",
-      "updatedAt": "2026-05-31T06:22:43.015Z",
-      "version": 1
-    },
-    {
-      "id": "pvc",
-      "type": "rectangle",
-      "x": 110,
-      "y": 280,
-      "width": 230,
-      "height": 80,
-      "backgroundColor": "#d0ebff",
-      "strokeColor": "#1971c2",
-      "label": {
-        "text": "ProfileViewController\nSimpleAction (circuit)"
-      },
-      "fontSize": 15,
-      "createdAt": "2026-05-31T06:22:43.015Z",
-      "updatedAt": "2026-05-31T06:22:43.015Z",
-      "version": 1
-    },
-    {
-      "id": "cps",
-      "type": "rectangle",
-      "x": 110,
-      "y": 440,
-      "width": 230,
-      "height": 80,
-      "backgroundColor": "#d0ebff",
-      "strokeColor": "#1971c2",
-      "label": {
-        "text": "CircuitProfilerService\nStartNew · Step · StopAsync"
+        "text": "Admin user — opens any XAF ListView"
       },
       "fontSize": 14,
-      "createdAt": "2026-05-31T06:22:43.015Z",
-      "updatedAt": "2026-05-31T06:22:43.015Z",
+      "createdAt": "2026-05-31T19:56:21.525Z",
+      "updatedAt": "2026-05-31T19:56:21.525Z",
+      "version": 1
+    },
+    {
+      "id": "z-circuit",
+      "type": "rectangle",
+      "x": 80,
+      "y": 192,
+      "width": 820,
+      "height": 382,
+      "backgroundColor": "#fff9db",
+      "strokeColor": "#f08c00",
+      "strokeWidth": 1,
+      "createdAt": "2026-05-31T19:56:21.525Z",
+      "updatedAt": "2026-05-31T19:56:21.525Z",
+      "version": 1
+    },
+    {
+      "id": "z-circuit-lbl",
+      "type": "text",
+      "x": 96,
+      "y": 200,
+      "width": 800,
+      "height": 22,
+      "strokeColor": "#e8590c",
+      "text": "Blazor Server — SignalR circuit (no HttpContext; MiniProfiler.Current is null)",
+      "fontSize": 15,
+      "createdAt": "2026-05-31T19:56:21.525Z",
+      "updatedAt": "2026-05-31T19:56:21.525Z",
+      "version": 1
+    },
+    {
+      "id": "grid",
+      "type": "rectangle",
+      "x": 120,
+      "y": 242,
+      "width": 190,
+      "height": 56,
+      "backgroundColor": "#ffffff",
+      "strokeColor": "#1e1e1e",
+      "label": {
+        "text": "XAF ListView (grid)"
+      },
+      "fontSize": 14,
+      "createdAt": "2026-05-31T19:56:21.525Z",
+      "updatedAt": "2026-05-31T19:56:21.525Z",
+      "version": 1
+    },
+    {
+      "id": "apc",
+      "type": "rectangle",
+      "x": 120,
+      "y": 362,
+      "width": 270,
+      "height": 64,
+      "backgroundColor": "#ffffff",
+      "strokeColor": "#1e1e1e",
+      "label": {
+        "text": "AmbientProfilingController\n(brackets each load)"
+      },
+      "fontSize": 14,
+      "createdAt": "2026-05-31T19:56:21.525Z",
+      "updatedAt": "2026-05-31T19:56:21.525Z",
       "version": 1
     },
     {
       "id": "ef",
       "type": "rectangle",
-      "x": 380,
-      "y": 440,
+      "x": 470,
+      "y": 232,
       "width": 200,
-      "height": 80,
-      "backgroundColor": "#d0ebff",
-      "strokeColor": "#1971c2",
+      "height": 56,
+      "backgroundColor": "#ffffff",
+      "strokeColor": "#1e1e1e",
       "label": {
-        "text": "EF Core\nN+1 over OrdersTotal"
+        "text": "EF Core DbContext"
       },
-      "fontSize": 15,
-      "createdAt": "2026-05-31T06:22:43.015Z",
-      "updatedAt": "2026-05-31T06:22:43.015Z",
+      "fontSize": 14,
+      "createdAt": "2026-05-31T19:56:21.525Z",
+      "updatedAt": "2026-05-31T19:56:21.525Z",
       "version": 1
     },
     {
-      "id": "http",
+      "id": "int",
       "type": "rectangle",
-      "x": 620,
-      "y": 440,
-      "width": 210,
-      "height": 80,
-      "backgroundColor": "#ffe3c4",
-      "strokeColor": "#e8590c",
+      "x": 470,
+      "y": 352,
+      "width": 270,
+      "height": 64,
+      "backgroundColor": "#ffffff",
+      "strokeColor": "#1e1e1e",
       "label": {
-        "text": "HTTP requests\nAddMiniProfiler + EF"
+        "text": "QueryCaptureInterceptor\n(DbCommandInterceptor)"
       },
-      "fontSize": 15,
-      "createdAt": "2026-05-31T06:22:43.015Z",
-      "updatedAt": "2026-05-31T06:22:43.015Z",
+      "fontSize": 14,
+      "createdAt": "2026-05-31T19:56:21.525Z",
+      "updatedAt": "2026-05-31T19:56:21.525Z",
+      "version": 1
+    },
+    {
+      "id": "reg",
+      "type": "rectangle",
+      "x": 430,
+      "y": 472,
+      "width": 390,
+      "height": 80,
+      "backgroundColor": "#d3f9d8",
+      "strokeColor": "#2f9e44",
+      "label": {
+        "text": "OperationCaptureRegistry\nexplicit MiniProfiler per DbContext"
+      },
+      "fontSize": 14,
+      "createdAt": "2026-05-31T19:56:21.525Z",
+      "updatedAt": "2026-05-31T19:56:21.525Z",
       "version": 1
     },
     {
       "id": "store",
       "type": "rectangle",
-      "x": 360,
-      "y": 650,
-      "width": 340,
-      "height": 90,
-      "backgroundColor": "#c3f0c8",
-      "strokeColor": "#2f9e44",
+      "x": 240,
+      "y": 622,
+      "width": 320,
+      "height": 64,
+      "backgroundColor": "#ffe3e3",
+      "strokeColor": "#e03131",
       "label": {
-        "text": "SqlServerStorage\nMiniProfilers · Timings tables"
+        "text": "SqlServerStorage\n(MiniProfilers table)"
       },
-      "fontSize": 16,
-      "createdAt": "2026-05-31T06:22:43.015Z",
-      "updatedAt": "2026-05-31T06:22:43.015Z",
+      "fontSize": 14,
+      "createdAt": "2026-05-31T19:56:21.525Z",
+      "updatedAt": "2026-05-31T19:56:21.525Z",
       "version": 1
     },
     {
-      "id": "psl",
+      "id": "pmc",
       "type": "rectangle",
-      "x": 910,
-      "y": 280,
-      "width": 300,
-      "height": 80,
-      "backgroundColor": "#f3d9fa",
-      "strokeColor": "#9c36b5",
+      "x": 700,
+      "y": 622,
+      "width": 320,
+      "height": 64,
+      "backgroundColor": "#ffffff",
+      "strokeColor": "#1e1e1e",
       "label": {
-        "text": "Profile Summary ListView\nnon-persistent · Client mode"
+        "text": "ProfileMaintenanceController\nClear / Delete Selected"
       },
+      "fontSize": 14,
+      "createdAt": "2026-05-31T19:56:21.525Z",
+      "updatedAt": "2026-05-31T19:57:15.669Z",
+      "version": 2
+    },
+    {
+      "id": "z-browse",
+      "type": "rectangle",
+      "x": 80,
+      "y": 724,
+      "width": 940,
+      "height": 168,
+      "backgroundColor": "#e7f5ff",
+      "strokeColor": "#1971c2",
+      "strokeWidth": 1,
+      "createdAt": "2026-05-31T19:56:21.525Z",
+      "updatedAt": "2026-05-31T19:56:21.525Z",
+      "version": 1
+    },
+    {
+      "id": "z-browse-lbl",
+      "type": "text",
+      "x": 96,
+      "y": 732,
+      "width": 600,
+      "height": 22,
+      "strokeColor": "#1971c2",
+      "text": "In-app browse (read-only, non-persistent)",
       "fontSize": 15,
-      "createdAt": "2026-05-31T06:22:43.015Z",
-      "updatedAt": "2026-05-31T06:22:43.015Z",
+      "createdAt": "2026-05-31T19:56:21.525Z",
+      "updatedAt": "2026-05-31T19:56:21.525Z",
       "version": 1
     },
     {
       "id": "psc",
       "type": "rectangle",
-      "x": 910,
-      "y": 440,
-      "width": 300,
-      "height": 80,
-      "backgroundColor": "#f3d9fa",
-      "strokeColor": "#9c36b5",
-      "label": {
-        "text": "ProfileSummaryController\nWindowController · ObjectsGetting"
-      },
-      "fontSize": 14,
-      "createdAt": "2026-05-31T06:22:43.016Z",
-      "updatedAt": "2026-05-31T06:22:43.016Z",
-      "version": 1
-    },
-    {
-      "id": "legend",
-      "type": "text",
-      "x": 110,
-      "y": 790,
-      "width": 1000,
-      "height": 24,
-      "strokeColor": "#495057",
-      "text": "Blue = circuit capture (Layer B)    Orange = HTTP + EF (Layer A)    Green = storage (Layer C)    Purple = in-app browse",
-      "fontSize": 15,
-      "createdAt": "2026-05-31T06:22:43.016Z",
-      "updatedAt": "2026-05-31T06:22:43.016Z",
-      "version": 1
-    },
-    {
-      "id": "mpte7qcyfd75oira67e",
-      "type": "arrow",
-      "x": 225,
-      "y": 198,
+      "x": 120,
+      "y": 772,
+      "width": 250,
+      "height": 64,
+      "backgroundColor": "#ffffff",
       "strokeColor": "#1e1e1e",
       "label": {
-        "text": "click"
+        "text": "ProfileSummaryController\n(ObjectsGetting)"
       },
+      "fontSize": 14,
+      "createdAt": "2026-05-31T19:56:21.526Z",
+      "updatedAt": "2026-05-31T19:56:21.526Z",
+      "version": 1
+    },
+    {
+      "id": "ps",
+      "type": "rectangle",
+      "x": 430,
+      "y": 772,
+      "width": 250,
+      "height": 64,
+      "backgroundColor": "#ffffff",
+      "strokeColor": "#1e1e1e",
+      "label": {
+        "text": "ProfileSummary ListView\nOperation · QueryCount"
+      },
+      "fontSize": 14,
+      "createdAt": "2026-05-31T19:56:21.526Z",
+      "updatedAt": "2026-05-31T19:56:21.526Z",
+      "version": 1
+    },
+    {
+      "id": "pd",
+      "type": "rectangle",
+      "x": 740,
+      "y": 768,
+      "width": 270,
+      "height": 72,
+      "backgroundColor": "#ffffff",
+      "strokeColor": "#1e1e1e",
+      "label": {
+        "text": "DetailView + ProfileQuery\nSql · ExecuteCount (N+1)"
+      },
+      "fontSize": 14,
+      "createdAt": "2026-05-31T19:56:21.526Z",
+      "updatedAt": "2026-05-31T19:56:21.526Z",
+      "version": 1
+    },
+    {
+      "id": "mpu7a2xz8yufbrr5qa2",
+      "type": "arrow",
+      "x": 315.44730713565855,
+      "y": 159.9097513793183,
+      "strokeColor": "#1e1e1e",
       "points": [
         [
           0,
           0
         ],
         [
-          0,
-          74
+          -69.50775295744842,
+          76.18049724136341
         ]
       ],
       "start": {
         "id": "user"
       },
       "end": {
-        "id": "pvc"
+        "id": "grid"
       },
-      "createdAt": "2026-05-31T06:22:43.016Z",
-      "updatedAt": "2026-05-31T06:22:43.016Z",
+      "createdAt": "2026-05-31T19:56:21.526Z",
+      "updatedAt": "2026-05-31T19:56:21.526Z",
       "version": 1
     },
     {
-      "id": "mpte7qcynv2lxkbhqr",
+      "id": "mpu7a2xz5moly81ee87",
       "type": "arrow",
-      "x": 225,
-      "y": 368,
-      "strokeColor": "#1e1e1e",
+      "x": 226.4882803038982,
+      "y": 305.6136689420844,
+      "strokeColor": "#1971c2",
+      "label": {
+        "text": "load events"
+      },
       "points": [
         [
           0,
           0
         ],
         [
-          0,
-          64
+          15.73311681155846,
+          48.77266211583117
         ]
       ],
       "start": {
-        "id": "pvc"
+        "id": "grid"
       },
       "end": {
-        "id": "cps"
+        "id": "apc"
       },
-      "createdAt": "2026-05-31T06:22:43.016Z",
-      "updatedAt": "2026-05-31T06:22:43.016Z",
+      "createdAt": "2026-05-31T19:56:21.526Z",
+      "updatedAt": "2026-05-31T19:56:21.526Z",
       "version": 1
     },
     {
-      "id": "mpte7qcyfeg3l0cw5t",
+      "id": "mpu7a2xzvrqomq6nkip",
       "type": "arrow",
-      "x": 348,
-      "y": 480,
-      "strokeColor": "#1e1e1e",
+      "x": 317.99682791422896,
+      "y": 267.0986809038246,
+      "strokeColor": "#e03131",
+      "label": {
+        "text": "SELECT + N+1"
+      },
       "points": [
         [
           0,
           0
         ],
         [
-          24,
-          0
+          144.00634417154208,
+          -4.056516737226559
         ]
       ],
       "start": {
-        "id": "cps"
+        "id": "grid"
       },
       "end": {
         "id": "ef"
       },
-      "createdAt": "2026-05-31T06:22:43.016Z",
-      "updatedAt": "2026-05-31T06:22:43.016Z",
+      "createdAt": "2026-05-31T19:56:21.526Z",
+      "updatedAt": "2026-05-31T19:56:21.526Z",
       "version": 1
     },
     {
-      "id": "mpte7qcydgr8ay1n685",
+      "id": "mpu7a2xzq3fywdeliof",
       "type": "arrow",
-      "x": 288.28289827677236,
-      "y": 524.609256162315,
-      "strokeColor": "#2f9e44",
+      "x": 580.0763818229086,
+      "y": 295.69918131544756,
+      "strokeColor": "#e03131",
       "label": {
-        "text": "save"
+        "text": "every cmd"
       },
       "points": [
         [
@@ -263,83 +387,115 @@
           0
         ],
         [
-          171.34118019064135,
-          120.78148767537004
-        ]
-      ],
-      "start": {
-        "id": "cps"
-      },
-      "end": {
-        "id": "store"
-      },
-      "createdAt": "2026-05-31T06:22:43.016Z",
-      "updatedAt": "2026-05-31T06:22:43.016Z",
-      "version": 1
-    },
-    {
-      "id": "mpte7qcymlylpd9g03d",
-      "type": "arrow",
-      "x": 491.1144335386776,
-      "y": 527.7920642163135,
-      "strokeColor": "#2f9e44",
-      "label": {
-        "text": "SQL"
-      },
-      "points": [
-        [
-          0,
-          0
-        ],
-        [
-          26.608342224970386,
-          114.41587156737296
+          13.718204096118257,
+          48.60163736910488
         ]
       ],
       "start": {
         "id": "ef"
       },
       "end": {
-        "id": "store"
+        "id": "int"
       },
-      "createdAt": "2026-05-31T06:22:43.016Z",
-      "updatedAt": "2026-05-31T06:22:43.016Z",
+      "createdAt": "2026-05-31T19:56:21.526Z",
+      "updatedAt": "2026-05-31T19:56:21.526Z",
       "version": 1
     },
     {
-      "id": "mpte7qcy2kld4qw2skw",
+      "id": "mpu7a2xzmoqemxulgs9",
       "type": "arrow",
-      "x": 683.3464107246716,
-      "y": 525.9257522779262,
-      "strokeColor": "#e8590c",
+      "x": 362.9607643660243,
+      "y": 428.4307302572726,
+      "strokeColor": "#1971c2",
+      "label": {
+        "text": "Begin / End"
+      },
       "points": [
         [
           0,
           0
         ],
         [
-          -107.157937728413,
-          118.14849544414756
+          128.99372550523952,
+          41.13853948545477
         ]
       ],
       "start": {
-        "id": "http"
+        "id": "apc"
+      },
+      "end": {
+        "id": "reg"
+      },
+      "createdAt": "2026-05-31T19:56:21.526Z",
+      "updatedAt": "2026-05-31T19:56:21.526Z",
+      "version": 1
+    },
+    {
+      "id": "mpu7a2xzpsilryi3o9",
+      "type": "arrow",
+      "x": 611.2350150421888,
+      "y": 423.90409627000884,
+      "strokeColor": "#e03131",
+      "label": {
+        "text": "AddSql"
+      },
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          6.27996991562236,
+          40.19180745998233
+        ]
+      ],
+      "start": {
+        "id": "int"
+      },
+      "end": {
+        "id": "reg"
+      },
+      "createdAt": "2026-05-31T19:56:21.527Z",
+      "updatedAt": "2026-05-31T19:56:21.527Z",
+      "version": 1
+    },
+    {
+      "id": "mpu7a2xz7sgjkxy92qg",
+      "type": "arrow",
+      "x": 554.8543784813585,
+      "y": 556.2696811362093,
+      "strokeColor": "#2f9e44",
+      "label": {
+        "text": "save + trim 200"
+      },
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          -97.38481330074507,
+          61.46063772758134
+        ]
+      ],
+      "start": {
+        "id": "reg"
       },
       "end": {
         "id": "store"
       },
-      "createdAt": "2026-05-31T06:22:43.016Z",
-      "updatedAt": "2026-05-31T06:22:43.016Z",
+      "createdAt": "2026-05-31T19:56:21.527Z",
+      "updatedAt": "2026-05-31T19:56:21.527Z",
       "version": 1
     },
     {
-      "id": "mpte7qcy8r7uvg00hmi",
+      "id": "mpu7a2xz36mp2qwblk9",
       "type": "arrow",
-      "x": 648.3434884047192,
-      "y": 646.9927358358215,
-      "strokeColor": "#9c36b5",
+      "x": 612,
+      "y": 654,
+      "strokeColor": "#1e1e1e",
       "label": {
-        "text": "read"
+        "text": "Clear / Delete"
       },
       "points": [
         [
@@ -347,8 +503,37 @@
           0
         ],
         [
-          305.63860458591046,
-          -123.98547167164293
+          -44,
+          0
+        ]
+      ],
+      "start": {
+        "id": "pmc"
+      },
+      "end": {
+        "id": "store"
+      },
+      "createdAt": "2026-05-31T19:56:21.527Z",
+      "updatedAt": "2026-05-31T19:56:21.527Z",
+      "version": 1
+    },
+    {
+      "id": "mpu7a2xzi22mr8ldhb",
+      "type": "arrow",
+      "x": 361.18451619920063,
+      "y": 691.5633714201284,
+      "strokeColor": "#1971c2",
+      "label": {
+        "text": "List / Load"
+      },
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          -77.36903239840126,
+          74.87325715974316
         ]
       ],
       "start": {
@@ -357,34 +542,63 @@
       "end": {
         "id": "psc"
       },
-      "createdAt": "2026-05-31T06:22:43.016Z",
-      "updatedAt": "2026-05-31T06:22:43.016Z",
+      "createdAt": "2026-05-31T19:56:21.528Z",
+      "updatedAt": "2026-05-31T19:56:21.528Z",
       "version": 1
     },
     {
-      "id": "mpte7qcyy6dm1wifnlk",
+      "id": "mpu7a2xz69jvfvyrkcx",
       "type": "arrow",
-      "x": 1060,
-      "y": 432,
-      "strokeColor": "#9c36b5",
+      "x": 378,
+      "y": 804,
+      "strokeColor": "#1e1e1e",
       "points": [
         [
           0,
           0
         ],
         [
-          0,
-          -64
+          44,
+          0
         ]
       ],
       "start": {
         "id": "psc"
       },
       "end": {
-        "id": "psl"
+        "id": "ps"
       },
-      "createdAt": "2026-05-31T06:22:43.016Z",
-      "updatedAt": "2026-05-31T06:22:43.016Z",
+      "createdAt": "2026-05-31T19:56:21.528Z",
+      "updatedAt": "2026-05-31T19:56:21.528Z",
+      "version": 1
+    },
+    {
+      "id": "mpu7a2xz3u4pnirfn5z",
+      "type": "arrow",
+      "x": 688,
+      "y": 804,
+      "strokeColor": "#1e1e1e",
+      "label": {
+        "text": "drill in"
+      },
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          44,
+          0
+        ]
+      ],
+      "start": {
+        "id": "ps"
+      },
+      "end": {
+        "id": "pd"
+      },
+      "createdAt": "2026-05-31T19:56:21.528Z",
+      "updatedAt": "2026-05-31T19:56:21.528Z",
       "version": 1
     }
   ],

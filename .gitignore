@@ -33,5 +33,8 @@ node_modules/
 
 run.log
 
+# Excalidraw MCP server log (written into the repo dir when the canvas/MCP runs)
+excalidraw.log
+
 # Playwright MCP scratch (snapshots/console logs from automation runs)
 .playwright-mcp/

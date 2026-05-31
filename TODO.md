@@ -1,99 +1,75 @@
 # XAFProfiler — TODO
 
-Tracking the MiniProfiler POC. Design:
-`docs/plans/2026-05-30-miniprofiler-poc-design.md`.
+MiniProfiler-in-XAF-Blazor POC. Current design: **ambient EF-Core profiling**
+(`docs/plans/2026-05-31-ambient-ef-profiling-design.md`). The original 3-layer POC and its manual
+"Profile This View" action (`docs/plans/2026-05-30-*`) are superseded.
 
-**Status: AMBIENT EF profiling complete on branch `feat/ambient-ef-profiling` (2026-05-31), not
-yet merged.** Automatic capture of every ListView data-load's EF SQL via a `DbCommandInterceptor`
-(keyed by DbContext); identifiable/drillable/cleanable browse view; manual "Profile This View"
-removed. Verified end-to-end (Customer load = 1,125 queries; N+1 OrderLines ExecuteCount 1,089;
-Clear empties store; no transport noise; 0 errors). Design/plan in `docs/plans/2026-05-31-ambient-ef-profiling*.md`;
-details in SESSION_HANDOFF + memory `ambient-ef-capture-interceptor`.
-
-**Earlier: core POC proven (2026-05-31).** Circuit capture (Layer B) + SQL storage (Layer C)
-verified at the data layer (SQL store = ground truth). The custom **ProfileSummary XAF view
-now RENDERS, fixed 2026-05-31** (see Layer C). The built-in `/profiler/results` UI is still
-auth-blocked. Dark-theme not exercised. (The ambient feature above supersedes the manual action.)
+**Status: ambient EF profiling complete, verified, MERGED to `master`, pushed to `origin`
+(2026-05-31).** Automatic capture of every ListView data-load's EF SQL via a custom
+`DbCommandInterceptor` (keyed by DbContext); identifiable / drillable / cleanable browse view;
+manual action removed. Verified end-to-end (Customer load = 1,125 queries; N+1 OrderLines
+ExecuteCount 1,089; Clear empties store; no transport noise; 0 build warnings/errors). Details in
+SESSION_HANDOFF + memory `ambient-ef-capture-interceptor`. Docs (README / HOW_TO_IMPLEMENT /
+ARCHITECTURE) updated to the ambient design 2026-05-31.
 
 ## Demo domain
-- [x] `Customer` / `Order` / `OrderLine` XAF EF Core entities (`BusinessObjects/Demo/`)
-- [x] Register DbSets in `XAFProfilerEFCoreDbContext`
-- [x] Seed ~200 customers / orders / lines in `Updater` (seeded 200 / 5999 / 33065)
-- [x] Customer ListView with a calculated `OrdersTotal` (deliberate N+1 / slow aggregation) — screenshot `03`
+- [x] `Customer` / `Order` / `OrderLine` XAF EF Core entities (`Module/BusinessObjects/Demo/`)
+- [x] DbSets registered in `XAFProfilerEFCoreDbContext`; seeded 200 / 5999 / 33065 in `Updater`
+- [x] Customer ListView with a calculated `OrdersTotal` (deliberate N+1 / slow aggregation)
 
-## Layer A — HTTP + EF Core
-- [x] Add `MiniProfiler.AspNetCore.Mvc` + `MiniProfiler.EntityFrameworkCore` to Blazor.Server
-- [x] `Profiling:Enabled` flag in `appsettings.json` (false) / `appsettings.Development.json` (true)
-- [x] `AddMiniProfiler().AddEntityFramework()` + admin-gated authorize in `Startup`
-- [x] `app.UseMiniProfiler()` before `UseRouting()`
-- [x] Popup injects into XAF Blazor host (`<mini-profiler />` in `_Host.cshtml` + `_ViewImports.cshtml`);
-      "MiniProfiler Init" appears in the browser console when flag on.
+## Storage (Layer C)
+- [x] `SqlServerStorage` (`MiniProfiler.Providers.SqlServer` 4.3.8) as MiniProfiler storage
+- [x] `ProfilerStorageInitializer` bootstraps the DB (via `master`) + 3 MiniProfiler tables at startup
+- [x] Profiles persist across app shutdown
 
-## Layer B — Circuit capture (core deliverable)
-- [x] `Services/CircuitProfilerService.cs` (scoped)
-- [x] `Controllers/ProfileViewController.cs` — "Profile This View" action
-- [x] Manual `StartNew()` / `.Step()` / `StopAsync(false)` over the SignalR circuit
-- [x] PROVEN at runtime (verified against the SQL store): clicking the action persists a
-      circuit profile "Profile: Customer ListView" (~3947 ms) with nested `.Step()` markers
-      "Reload + aggregate" (~3946 ms) → "Sum OrdersTotal (N+1)" (~3886 ms). EF SQL **is**
-      captured over the circuit — attached as `CustomTimingsJson` child timings: the N+1 step
-      holds **thousands of SQL queries (7.4 MB of timing JSON)**, "Reload" a handful (2.2 KB).
-      8 such profiles accumulated across verification runs.
+## Ambient capture (core deliverable)
+- [x] `Services/QueryCaptureInterceptor.cs` — `DbCommandInterceptor`, registered on the DbContext
+- [x] `Services/OperationCaptureRegistry.cs` — explicit `MiniProfiler` per `DbContext`
+      (`ConditionalWeakTable`); `End` does the mandatory `Task.Run` stop + newest-200 retention trim
+- [x] `Controllers/AmbientProfilingController.cs` (Main `WindowController`) — brackets each ListView
+      load via `ListViewCreating` + `CollectionChanging`/`Reloading`/`Reloaded`/`Disposed`;
+      deferred flush on next load (collection source `Disposed` doesn't fire on nav)
+- [x] `options.ShouldProfile = _ => false` — HTTP auto-profiling off; no `/_blazor`/`_Host`/`GET /` noise
+- [x] **Proven:** Approach 1 (`StartNew` around collection events) captured 0 SQL because
+      MiniProfiler's EF interceptor logs to the AsyncLocal `Current` (null on the grid's chain).
+      Pivoted to the custom interceptor (Approach 2). `Customer · ListView load` → 1,125 SQL commands.
 
-## Layer C — Storage + browsing
-- [x] Configure `SqlServerStorage` (`MiniProfiler.Providers.SqlServer` 4.3.8)
-- [x] Profiler tables bootstrapped by `ProfilerStorageInitializer` (creates DB if absent, then tables)
-- [x] Profiles persist in SQL across app shutdown (count holds with app stopped)
-- [x] Custom read-only XAF view (`ProfileSummary` + `ProfileSummaryController`) — reads from the
-      same `SqlServerStorage` that holds the verified profiles.
-- [x] **`ProfileSummary` view RENDERS — FIXED & VERIFIED (2026-05-31).** Grid went from empty →
-      100 rows of real profile data; one row GUID cross-checked against `MiniProfilers` in SQL.
-      Root cause was THREE things together (all required):
-      1. `DataAccessMode=Client` on `ProfileSummary_ListView` (Model.xafml). Blazor's default is
-         **Queryable**, which never raises `ObjectsGetting` for a storeless type.
-      2. Key must use `DevExpress.ExpressApp.Data.Key`, NOT the EF Core `DataAnnotations.Key`
-         (XAF's non-persistent key detection ignores the latter; error 1037 otherwise).
-      3. Subscribe `ObjectsGetting`/`ObjectByKeyGetting` via `XafApplication.ObjectSpaceCreated`
-         from a `WindowController` (TargetWindowType=Main) — NOT a per-view ViewController's
-         `OnActivated`. The collection source requests objects during view creation, before
-         per-view controllers activate, so OnActivated subscription was always too late.
-      The earlier "BaseObject" theory was a red herring; POCO + `CreateObject<T>()` is correct
-      practice but was never the cause.
+## Browse + drill-down
+- [x] `ProfileSummary` (Operation/Started/DurationMs/QueryCount/SlowestQueryMs) + `ProfileQuery`
+      child (Sql/DurationMs/ExecuteCount) — non-persistent `[DomainComponent]`
+- [x] `Services/ProfileProjection.cs` — walks the stored timing tree, groups SQL by command text →
+      `ExecuteCount` (N+1 signal), orders by summed duration
+- [x] `ProfileSummaryController` (browse list via `ObjectSpaceCreated` → `ObjectsGetting`/`ByKeyGetting`)
+- [x] `ProfileSummaryDetailController` — fills the nested Queries grid (XAF reuses the list row's
+      object, which has empty Queries; DX 401747)
+- [x] **1057 fix:** `RemoveFromModifiedObjects` after `CreateObject<T>()` so the read-only projection
+      opens a DetailView (DX 113471)
+- [x] Non-persistent ListView render — the three-part fix (Client mode + DX key + `ObjectSpaceCreated`
+      from a `WindowController`); verified against the SQL store
+
+## Cleanup + retention
+- [x] `ProfileMaintenanceController` — "Clear Profiles" + "Delete Selected" `Tools` actions
+- [x] `Services/ProfileStore.cs` — direct-SQL `ClearAll` / `DeleteByIds` / `TrimToNewest` (children first)
+- [x] Auto-retention: trim to newest 200 after each save
 
 ## Verification
-- [x] `dotnet build XAFProfiler.slnx` clean (0/0)
-- [x] Run + seed + auto-login as admin
-- [x] Layer A popup present (console "MiniProfiler Init")
-- [x] Layer B circuit profile with markers + thousands of child SQL timings (verified in SQL)
-- [x] Layer C profile persisted to SQL, survives app shutdown
-- [x] Playwright smoke (light theme) — honest screenshots `01`–`04` at repo root
-- [x] Negative: flag off → **no mini-profiler script** on the page (0 occurrences). Nuance:
-      `/profiler/results-index` returns **200, not 404** — with the middleware gone there's no
-      `/profiler` route, so XAF's `MapFallbackToPage("/_Host")` SPA catch-all serves the app
-      shell (no profiler data served). Flag restored to true.
-- [ ] Built-in `/profiler/results?id=<real id>` renders in-browser — currently returns **"hidden"**
-      (the `ResultsAuthorize` delegate; a bogus id returns "not found", so the profile IS loadable).
-- [x] `ProfileSummary` XAF view render — RENDERS 100 rows, verified vs SQL store (see Layer C)
+- [x] `dotnet build XAFProfiler.slnx` clean (0/0, verified 2026-05-31)
+- [x] Ambient capture → `Customer · ListView load` with QueryCount > 0; N+1 OrderLines ExecuteCount 1,089
+- [x] No transport/framework noise persisted (`ShouldProfile=false`)
+- [x] Profiles survive app restart; "Clear Profiles" empties the store; retention caps at 200
+- [x] Drill-down DetailView opens (no 1057) with a populated Queries grid
 - [ ] Dark-theme variant (only light theme verified)
+- [ ] Built-in `/profiler/results?id=<real id>` in-browser — returns "hidden" (`ResultsAuthorize`
+      doesn't recognise the XAF auth cookie). Low priority; the custom view is the surface.
 
-## Known findings (document for the port-back)
-- **ProfileSummary empty grid — RESOLVED (2026-05-31).** A Blazor non-persistent ListView needs
-  THREE things together, or it silently shows no data: (1) `DataAccessMode=Client` on the
-  ListView model node (Blazor defaults to Queryable, which never raises `ObjectsGetting`);
-  (2) a `DevExpress.ExpressApp.Data.Key` on the key property (NOT EF Core `DataAnnotations.Key`);
-  (3) subscribe `ObjectsGetting`/`ObjectByKeyGetting` via `XafApplication.ObjectSpaceCreated`
-  from a `WindowController`, NOT a per-view ViewController's `OnActivated` (the collection source
-  requests objects during view creation, before per-view controllers activate). The POCO +
-  `CreateObject<T>()` guidance (DX 113711) is correct but was never the cause. **Carry all three
-  to the WLNCentral port-back.**
-- **Startup DB ordering:** `EnsureTables` must create the app DB itself (XAF creates it lazily,
-  after host start). Fixed in `ProfilerStorageInitializer` via a `master` connection.
-- **Built-in MiniProfiler UI blocked under XAF auth:** `/profiler/results-index` "Unauthorized",
-  `/profiler/results?id=` "hidden" — `ResultsAuthorize`/`ResultsListAuthorize` don't recognise
-  XAF's auth cookie. The custom XAF view reads storage directly and sidesteps this — and is now
-  confirmed working, so it's the reliable in-app surface.
+## Docs
+- [x] README.md — rewritten for the ambient flow + current Mermaid diagram (2026-05-31)
+- [x] docs/HOW_TO_IMPLEMENT.md — full ambient recipe (2026-05-31)
+- [x] ARCHITECTURE.md — ambient design + current solution layout (2026-05-31)
+- [x] Regenerate `docs/architecture.png` / `.excalidraw` to the ambient flow (2026-05-31)
 
-## Follow-up (not this POC)
-- [ ] Capture the `ProfileSummary` view render; decide whether to fix the built-in UI auth
-- [ ] Fix-before-port-back (code review): sync-over-async stop, null connection-string guard, ILogger
-- [ ] Port the proven circuit-capture + storage pattern back to WLNCentral `Profile` branch
+## Follow-up (before the WLNCentral port-back)
+- [ ] Code review: null connection-string guard in `ProfilerStorageInitializer`; swap its
+      `Console.WriteLine` for `ILogger`; revisit fire-and-forget retention cadence
+- [ ] Port the proven ambient capture + storage + non-persistent browse/detail pattern back to the
+      WLNCentral `Profile` branch

@@ -1,26 +1,31 @@
-# How to integrate MiniProfiler into a DevExpress XAF Blazor Server app
+# How to integrate ambient EF-Core profiling into a DevExpress XAF Blazor Server app
 
-This is a step-by-step recipe for adding [StackExchange MiniProfiler](https://miniprofiler.com/)
-to an XAF Blazor Server application, including the two hard parts most integrations skip:
-**profiling over the SignalR circuit** and **persisting profiles to SQL Server** so you can
-browse them inside the app.
+This is a step-by-step recipe for adding **automatic, app-wide EF-Core profiling** to an XAF
+Blazor Server application using [StackExchange MiniProfiler](https://miniprofiler.com/) for
+storage — including the two hard parts most integrations skip: **capturing SQL that runs over the
+SignalR circuit** (where `MiniProfiler.Current` is null) and **persisting profiles to SQL Server**
+so you can browse and drill into them inside the app.
+
+There is **no "profile this" button**. Every XAF ListView data-load is captured automatically;
+the user just opens **Profile Summary** to see what each screen ran.
 
 All code below is taken from the working POC in this repository. File paths are relative to the
-Blazor.Server host project unless noted.
+`Blazor.Server` host project unless noted.
 
 ---
 
 ## Contents
 
 - [Prerequisites](#prerequisites)
-- [The three layers](#the-three-layers)
+- [Why ambient + interceptor (the core insight)](#why-ambient--interceptor-the-core-insight)
 - [Step 1 — Add the NuGet packages](#step-1--add-the-nuget-packages)
-- [Step 2 — Register MiniProfiler in Startup (Layer A)](#step-2--register-miniprofiler-in-startup-layer-a)
-- [Step 3 — Wire the HTTP pipeline + bootstrap storage (Layer C, part 1)](#step-3--wire-the-http-pipeline--bootstrap-storage-layer-c-part-1)
-- [Step 4 — Create the SQL storage tables at startup](#step-4--create-the-sql-storage-tables-at-startup)
-- [Step 5 — Profile over the SignalR circuit (Layer B)](#step-5--profile-over-the-signalr-circuit-layer-b)
-- [Step 6 — Browse profiles in-app (non-persistent ListView)](#step-6--browse-profiles-in-app-non-persistent-listview)
-- [Step 7 — Inject the popup (optional)](#step-7--inject-the-popup-optional)
+- [Step 2 — Register MiniProfiler for storage only (Layer A/C)](#step-2--register-miniprofiler-for-storage-only-layer-ac)
+- [Step 3 — Register the capture services + interceptor on the DbContext](#step-3--register-the-capture-services--interceptor-on-the-dbcontext)
+- [Step 4 — Wire the HTTP pipeline + bootstrap storage](#step-4--wire-the-http-pipeline--bootstrap-storage)
+- [Step 5 — The capture core: registry + interceptor](#step-5--the-capture-core-registry--interceptor)
+- [Step 6 — The capture driver: AmbientProfilingController](#step-6--the-capture-driver-ambientprofilingcontroller)
+- [Step 7 — Browse + drill into profiles (non-persistent ListView)](#step-7--browse--drill-into-profiles-non-persistent-listview)
+- [Step 8 — Cleanup + retention](#step-8--cleanup--retention)
 - [Verification checklist](#verification-checklist)
 - [Gotchas reference](#gotchas-reference)
 
@@ -29,19 +34,34 @@ Blazor.Server host project unless noted.
 ## Prerequisites
 
 - An XAF **Blazor Server** app on the **EF Core** provider (this recipe uses SQL Server).
-- Admin/authenticated security so the profiler UI can be gated.
+- Admin/authenticated security so the built-in profiler UI can be gated (optional — the in-app
+  browse view is the primary surface and needs no gating).
 - A way to produce a measurable operation (this POC ships a deliberate N+1 via a calculated
   `Customer.OrdersTotal` property over a seeded `Customer → Order → OrderLine` domain).
 
 ---
 
-## The three layers
+## Why ambient + interceptor (the core insight)
 
-| Layer | What it profiles | Why it's separate |
-| --- | --- | --- |
-| **A — HTTP + EF Core** | Normal HTTP requests + the EF SQL they run | MiniProfiler's out-of-the-box mode; works only where there is an `HttpContext`. |
-| **B — Circuit capture** | A user operation triggered over the Blazor SignalR circuit | Circuit events have **no `HttpContext`**, so `MiniProfiler.Current` is null — you must start a profiler manually. |
-| **C — Storage** | Persisting + browsing captured profiles | The default storage is in-memory and dies with the app; you want SQL + an in-app view. |
+Two facts about XAF Blazor Server drive the entire design:
+
+1. **No `HttpContext` over the circuit.** A grid load happens in a SignalR circuit event, not an
+   HTTP request, so MiniProfiler's HTTP middleware never starts a profiler for it and
+   `MiniProfiler.Current` is null.
+2. **`MiniProfiler.Current` is `AsyncLocal`, and the grid runs on a different async chain.** Even
+   if you `MiniProfiler.StartNew()` in your controller, the DevExpress grid materialises its query
+   on a separate chain where `Current` is null again — so MiniProfiler's *own* EF interceptor
+   (which logs to `Current`) captures **zero** SQL for the grid. (This was proven the hard way:
+   ambient `· ListView load` profiles had 1 timing and 0 SQL timings.)
+
+The fix is to stop relying on `MiniProfiler.Current` entirely:
+
+- Hold a `MiniProfiler` **explicitly**, one per in-flight operation.
+- Key it by the **`DbContext` instance** that runs the operation's SQL. Each XAF ListView's object
+  space owns its own `DbContext`, and a custom `DbCommandInterceptor` sees that exact instance via
+  `CommandExecutedEventData.Context`.
+- The interceptor appends each command onto the right operation's held profiler as a `"sql"`
+  custom timing — the same shape MiniProfiler's storage and our projection already understand.
 
 ---
 
@@ -55,16 +75,20 @@ Add to the **Blazor.Server** project:
 <PackageReference Include="MiniProfiler.Providers.SqlServer" Version="4.3.8" />
 ```
 
-- `AspNetCore.Mvc` — middleware, tag helper, options.
-- `EntityFrameworkCore` — captures EF Core command timings as child timings.
-- `Providers.SqlServer` — the `SqlServerStorage` provider.
+- `AspNetCore.Mvc` — MiniProfiler options, storage plumbing, the `/profiler/*` result viewer.
+- `Providers.SqlServer` — the `SqlServerStorage` provider (persistence).
+- `EntityFrameworkCore` — only needed if you *also* want MiniProfiler's built-in EF capture for
+  ordinary HTTP requests. The ambient capture in this recipe does **not** depend on it; we add our
+  own interceptor. (The POC keeps `.AddEntityFramework()` registered but neutralised — see Step 2.)
 
 ---
 
-## Step 2 — Register MiniProfiler in Startup (Layer A)
+## Step 2 — Register MiniProfiler for storage only (Layer A/C)
 
-In `Startup.ConfigureServices`, register MiniProfiler **behind a config flag** and point its
-storage at the **same connection string XAF uses**, so profiles persist:
+We use MiniProfiler purely for its **storage + result-viewer**, not its HTTP auto-profiling. In
+`Startup.ConfigureServices`, register it **behind a config flag** and — critically — set
+`ShouldProfile = _ => false` so no HTTP request ever creates a profiler row (this is what kills the
+`GET /`, `GET /_Host`, `/_blazor` noise that otherwise litters the store):
 
 ```csharp
 // Startup.cs — ConfigureServices
@@ -78,16 +102,24 @@ if (Configuration.GetValue<bool>("Profiling:Enabled"))
         options.TrackConnectionOpenClose = true;
         options.ColorScheme = ColorScheme.Auto;
 
-        // Gate the built-in UI. In Development, allow any authenticated user;
+        // Disable HTTP-request auto-profiling entirely. ALL profiling is done by the ambient
+        // EF Core interceptor (Step 5), which is independent of MiniProfiler.Current and of the
+        // HTTP middleware. The middleware is still registered (it serves /profiler/* result
+        // endpoints) but ShouldProfile=false prevents any HTTP profiler row — including the
+        // Blazor SPA host-page render — from being persisted.
+        options.ShouldProfile = _ => false;
+
+        // Gate the built-in /profiler UI. In Development, allow any authenticated user;
         // otherwise require the Administrators role.
         options.ResultsAuthorize     = req => IsProfilerAuthorized(req.HttpContext);
         options.ResultsListAuthorize = req => IsProfilerAuthorized(req.HttpContext);
 
-        // Layer C: persist to SQL Server instead of the default in-memory cache.
+        // Persist to SQL Server (the SAME connection string XAF uses) instead of the default
+        // in-memory cache, so captured profiles survive restarts.
         var profilerConn = Configuration.GetConnectionString("ConnectionString");
         options.Storage = new SqlServerStorage(profilerConn);
     })
-    .AddEntityFramework(); // capture EF Core SQL as child timings
+    .AddEntityFramework();
 }
 ```
 
@@ -111,15 +143,58 @@ Add the config flag:
 "Profiling": { "Enabled": true }
 ```
 
-> **Why a flag?** Profiling has overhead and exposes timing internals. Keep it off in production
-> unless you explicitly switch it on.
+> **Why a flag?** Profiling has overhead and exposes timing internals. When off, none of the
+> capture services below are registered and the middleware is absent — zero overhead.
 
 ---
 
-## Step 3 — Wire the HTTP pipeline + bootstrap storage (Layer C, part 1)
+## Step 3 — Register the capture services + interceptor on the DbContext
 
-In `Startup.Configure`, call `UseMiniProfiler()` **before** `UseRouting()`, still behind the
-flag, and bootstrap the storage tables (next step):
+Still in `ConfigureServices`, register the two capture singletons (behind the same flag), then add
+the interceptor to the **XAF DbContext options** so it sees every command:
+
+```csharp
+// Startup.cs — ConfigureServices, after AddMiniProfiler
+if (Configuration.GetValue<bool>("Profiling:Enabled"))
+{
+    // Singletons so the interceptor (added to the DbContext options) and the
+    // AmbientProfilingController share ONE registry instance.
+    services.AddSingleton<OperationCaptureRegistry>();
+    services.AddSingleton<QueryCaptureInterceptor>();
+}
+
+services.AddXaf(Configuration, builder =>
+{
+    builder.UseApplication<MyBlazorApplication>();
+    builder.Modules /* … your modules … */;
+
+    builder.ObjectSpaceProviders
+        .AddEFCore(options => options.PreFetchReferenceProperties())
+        .WithDbContext<MyEFCoreDbContext>((serviceProvider, options) =>
+        {
+            options.UseConnectionString(connectionString);
+
+            if (Configuration.GetValue<bool>("Profiling:Enabled"))
+            {
+                // Capture every EF SQL command onto the per-operation profiler held by
+                // OperationCaptureRegistry, attributed by this DbContext instance.
+                options.AddInterceptors(
+                    serviceProvider.GetRequiredService<QueryCaptureInterceptor>());
+            }
+        })
+        .AddNonPersistent(); // required: the browse objects are non-persistent (Step 7)
+});
+```
+
+> `AddNonPersistent()` is what makes XAF serve `ProfileSummary` / `ProfileQuery` through a
+> `NonPersistentObjectSpace`. Without it the browse view has nowhere to come from.
+
+---
+
+## Step 4 — Wire the HTTP pipeline + bootstrap storage
+
+In `Startup.Configure`, call `UseMiniProfiler()` **before** `UseRouting()` (still behind the flag)
+and bootstrap the storage tables (next step):
 
 ```csharp
 // Startup.cs — Configure
@@ -131,7 +206,7 @@ if (Configuration.GetValue<bool>("Profiling:Enabled"))
 }
 
 app.UseRouting();
-app.UseXaf();                       // XAF after routing/auth as usual
+app.UseXaf();
 app.UseEndpoints(endpoints =>
 {
     endpoints.MapXafEndpoints();
@@ -141,205 +216,285 @@ app.UseEndpoints(endpoints =>
 });
 ```
 
+`ProfilerStorageInitializer.EnsureTables` connects to `master`, creates the application database if
+XAF hasn't yet (XAF creates it lazily on first access), then runs MiniProfiler's official
+table-creation scripts. It is idempotent and never throws (persistence is best-effort). It creates
+three tables: `MiniProfilers`, `MiniProfilerTimings`, `MiniProfilerClientTimings`. (See
+`Services/ProfilerStorageInitializer.cs` for the full source, including the
+`^[A-Za-z_][A-Za-z0-9_]*$` catalog-name validation before any `CREATE DATABASE`.)
+
 > **Note on the negative test:** with the flag off there is no `/profiler` route, so a request to
 > `/profiler/results-index` returns **200** (XAF's `MapFallbackToPage("/_Host")` SPA catch-all
 > serves the shell), **not 404**. Don't mistake that for "profiler is on."
 
 ---
 
-## Step 4 — Create the SQL storage tables at startup
+## Step 5 — The capture core: registry + interceptor
 
-`SqlServerStorage` does **not** create its own tables, and XAF creates its database *lazily* on
-first access — so at host-startup the catalog may not exist yet. This helper connects to
-`master`, creates an empty database if needed, then runs MiniProfiler's official table-creation
-scripts. It is idempotent and never throws (persistence is best-effort):
+### 5a. A shared constant (writer ↔ reader contract)
+
+The interceptor (writer) and the projection (reader, Step 7) must agree on the custom-timing key
+or capture silently yields empty profiles:
 
 ```csharp
-// Services/ProfilerStorageInitializer.cs
-public static class ProfilerStorageInitializer
+// Services/ProfilingConstants.cs
+internal static class ProfilingConstants
 {
-    public static void EnsureTables(string connectionString)
+    // MiniProfiler.EntityFrameworkCore uses "sql" for EF; we reuse it.
+    internal const string SqlTimingKey = "sql";
+}
+```
+
+### 5b. `OperationCaptureRegistry` — explicit profiler per `DbContext`
+
+A singleton that ties an in-flight operation to an explicitly-held `MiniProfiler`, keyed by
+`DbContext` in a `ConditionalWeakTable` (so an abandoned context can't leak a profiler):
+
+```csharp
+// Services/OperationCaptureRegistry.cs (abridged)
+public sealed class OperationCaptureRegistry
+{
+    private const string SqlTimingKey = ProfilingConstants.SqlTimingKey;
+    private const int RetentionLimit = 200;
+
+    private readonly object _gate = new();
+    private readonly ConditionalWeakTable<DbContext, OperationCapture> _active = new();
+    private readonly string? _connectionString;
+    private readonly ILogger<OperationCaptureRegistry>? _logger;
+
+    public sealed class OperationCapture
+    {
+        public MiniProfiler Profiler { get; }
+        // Appends one command as a "sql" custom timing on the profiler's ROOT timing, so the
+        // projection can read it via profiler.Root.CustomTimings["sql"].
+        public void AddSql(string commandText, double durationMs, string executeType)
+        {
+            var root = Profiler.Root;
+            if (root is null) return;
+            var ct = new CustomTiming(Profiler, commandText)
+            {
+                DurationMilliseconds = (decimal)durationMs,
+                ExecuteType = executeType,
+            };
+            root.AddCustomTiming(SqlTimingKey, ct);
+        }
+    }
+
+    // Begin: start an explicit profiler for this context's operation.
+    public void Begin(DbContext ctx, string operationName)
+    {
+        var profiler = MiniProfiler.StartNew(operationName);
+        if (profiler is null) return; // StartNew returns null if profiling is disabled.
+        lock (_gate)
+        {
+            _active.Remove(ctx);                                   // replace any stale entry
+            _active.Add(ctx, new OperationCapture(profiler, _logger));
+        }
+    }
+
+    // End: stop+save the profiler, then trim storage to the newest 200.
+    public void End(DbContext ctx)
+    {
+        OperationCapture? capture = null;
+        lock (_gate) { if (_active.TryGetValue(ctx, out var f)) { capture = f; _active.Remove(ctx); } }
+        if (capture is null) return;
+
+        // MANDATORY offload: a direct sync-over-async (.GetAwaiter().GetResult()) on the Blazor
+        // circuit's RendererSynchronizationContext deadlocks — StopAsync's continuation posts
+        // back to the very thread you are blocking. Task.Run runs it with no ambient sync context.
+        Task.Run(() => capture.Profiler.StopAsync(discardResults: false)).GetAwaiter().GetResult();
+
+        // Best-effort retention on a background thread (don't block the circuit on extra SQL).
+        if (_connectionString is { } cs)
+            Task.Run(() => ProfileStore.TrimToNewest(cs, RetentionLimit, _logger));
+    }
+
+    public bool TryGetCurrent(DbContext ctx, out OperationCapture capture) { /* table lookup */ }
+}
+```
+
+> **The `Task.Run` offload is not optional.** It is the documented fix for the circuit
+> `RendererSynchronizationContext` deadlock — without it, the load hangs forever on the loading
+> overlay.
+
+### 5c. `QueryCaptureInterceptor` — the `DbCommandInterceptor`
+
+A singleton interceptor that, on each executed command, looks up the command's owning `DbContext`
+in the registry and appends the SQL. It never touches `MiniProfiler.Current` and never throws into
+EF's pipeline:
+
+```csharp
+// Services/QueryCaptureInterceptor.cs (abridged)
+public sealed class QueryCaptureInterceptor : DbCommandInterceptor
+{
+    private readonly OperationCaptureRegistry _registry;
+
+    private void Capture(DbCommand command, CommandExecutedEventData e, string executeType)
     {
         try
         {
-            var targetBuilder = new SqlConnectionStringBuilder(connectionString);
-            var catalog = targetBuilder.InitialCatalog;
-            if (!string.IsNullOrWhiteSpace(catalog))
-                EnsureDatabase(connectionString, catalog); // CREATE DATABASE via master if missing
-
-            using var connection = new SqlConnection(connectionString);
-            connection.Open();
-
-            using (var check = connection.CreateCommand())
-            {
-                check.CommandText = "IF OBJECT_ID('MiniProfilers') IS NULL SELECT 0 ELSE SELECT 1";
-                if ((int)check.ExecuteScalar() == 1) return; // already created
-            }
-
-            var storage = new SqlServerStorage(connectionString); // throwaway: used for scripts
-            foreach (var script in storage.TableCreationScripts)
-            {
-                using var create = connection.CreateCommand();
-                create.CommandText = script;
-                create.ExecuteNonQuery();
-            }
+            if (e.Context is { } ctx && _registry.TryGetCurrent(ctx, out var capture))
+                capture.AddSql(command.CommandText, e.Duration.TotalMilliseconds, executeType);
         }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[ProfilerStorageInitializer] {ex.Message}"); // never fatal
-        }
+        catch (Exception ex) { _logger?.LogError(ex, "QueryCaptureInterceptor: capture failed."); }
     }
-    // EnsureDatabase(...) connects to `master` and runs:
-    //   IF DB_ID(@cat) IS NULL CREATE DATABASE [<validated-catalog>]
-    // The catalog name is validated against ^[A-Za-z_][A-Za-z0-9_]*$ before injection.
+
+    public override DbDataReader ReaderExecuted(DbCommand c, CommandExecutedEventData e, DbDataReader r)
+    { Capture(c, e, "Reader"); return base.ReaderExecuted(c, e, r); }
+
+    // …ReaderExecutedAsync, ScalarExecuted(+Async), NonQueryExecuted(+Async) all do the same.
 }
 ```
 
-This creates three tables: `MiniProfilers`, `MiniProfilerTimings`, `MiniProfilerClientTimings`.
+The grid materialises **synchronously** in practice, but both sync and async overrides are
+implemented for safety.
 
 ---
 
-## Step 5 — Profile over the SignalR circuit (Layer B)
+## Step 6 — The capture driver: AmbientProfilingController
 
-This is the core deliverable. A button click in Blazor Server runs in a **circuit event with no
-`HttpContext`**, so `MiniProfiler.Current` is null and the HTTP middleware never sees it. The fix:
-a **scoped (per-circuit) service** that owns a manually-started profiler.
-
-### 5a. The scoped service
+A Main-window `WindowController` that brackets every ListView load. It subscribes to
+`ListViewCreating` (not `ListViewCreated` — the collection events fire *during* construction), then
+brackets the load on the collection source's events. The subtle part is **where the load ends**:
 
 ```csharp
-// Services/CircuitProfilerService.cs
-public sealed class CircuitProfilerService
+// Controllers/AmbientProfilingController.cs (abridged)
+public sealed class AmbientProfilingController : WindowController
 {
-    public MiniProfiler? Current { get; private set; }
+    private OperationCaptureRegistry? _registry;
+    private DbContext? _openContext; // the single still-open capture, flushed at the next load
 
-    public MiniProfiler Start(string name) => Current = MiniProfiler.StartNew(name);
+    public AmbientProfilingController() => TargetWindowType = WindowType.Main;
 
-    public IDisposable? Step(string name) => Current?.Step(name);
-
-    public async Task StopAndSaveAsync()
+    protected override void OnActivated()
     {
-        if (Current != null)
-        {
-            await Current.StopAsync(discardResults: false); // saves to configured storage
-            Current = null;
-        }
+        base.OnActivated();
+        var config = Application.ServiceProvider?.GetService<IConfiguration>();
+        if (config?.GetValue<bool>("Profiling:Enabled") != true) return;   // inert when off
+        _registry = Application.ServiceProvider?.GetService<OperationCaptureRegistry>();
+        Application.ListViewCreating += Application_ListViewCreating;
+    }
+
+    protected override void OnDeactivated()
+    {
+        Application.ListViewCreating -= Application_ListViewCreating;
+        FlushOpen();                 // don't lose the last view's profile on shutdown
+        base.OnDeactivated();
+    }
+
+    private void FlushOpen()
+    {
+        var ctx = _openContext; if (ctx == null) return;
+        _openContext = null; _registry?.End(ctx);
+    }
+
+    private void Application_ListViewCreating(object? sender, ListViewCreatingEventArgs e)
+    {
+        var cs = e.CollectionSource; if (cs?.ObjectTypeInfo?.Type is not { } objectType) return;
+
+        // Opening ANY view is a fresh interaction; the PREVIOUS load's SQL ran synchronously and
+        // is fully captured by now. Flush it here — BEFORE the skip check — so navigating to the
+        // profiler's own views still saves the pending operation.
+        FlushOpen();
+
+        // Skip the profiler's own surface so it doesn't profile itself.
+        if (objectType == typeof(ProfileSummary) || objectType == typeof(ProfileQuery)) return;
+
+        var caption = Application?.Model?.BOModel?.GetClass(objectType)?.Caption ?? objectType.Name;
+        var profileName = $"{caption} · ListView load";
+
+        // The view's object space is a plain EFCoreObjectSpace (no Security System here),
+        // so we can reach the DbContext the grid will use.
+        DbContext? Ctx() => (cs.ObjectSpace as EFCoreObjectSpace)?.DbContext;
+
+        void Begin() { FlushOpen(); if (Ctx() is { } c) { _registry!.Begin(c, profileName); _openContext = c; } }
+        void End()   { if (Ctx() is { } c) { if (ReferenceEquals(_openContext, c)) _openContext = null; _registry!.End(c); } }
+
+        // Initial load: CollectionChanging opens; the grid SELECT + prefetch N+1 run synchronously
+        // after CollectionChanged and are flushed by the NEXT Begin (deferred flush).
+        cs.CollectionChanging  += (_, _) => Begin();
+        // Refresh: Reloading/Reloaded bracket the round-trip, so End() on Reloaded saves a full profiler.
+        cs.CollectionReloading += (_, _) => Begin();
+        cs.CollectionReloaded  += (_, _) => End();
+        cs.Disposed            += (_, _) => End();   // rarely fires on navigation, but flush if it does
     }
 }
 ```
 
-Register it (unconditionally, so controllers can always resolve it; it's inert without options):
-
-```csharp
-// Startup.ConfigureServices
-services.AddScoped<CircuitProfilerService>();
-```
-
-> `MiniProfiler.StartNew` uses the **global options** registered in `AddMiniProfiler` — including
-> `Storage`. If profiling is off, `StartNew` still runs but there's nowhere to persist; nothing
-> throws.
-
-### 5b. The XAF action that drives it
-
-A platform-specific `ViewController` (it lives in **Blazor.Server** because it references the
-profiler types) adds a "Profile This View" action to the target list view:
-
-```csharp
-// Controllers/ProfileViewController.cs
-public sealed class ProfileViewController : ViewController
-{
-    private readonly SimpleAction profileAction;
-
-    public ProfileViewController()
-    {
-        TargetViewType   = ViewType.ListView;
-        TargetObjectType = typeof(Customer);
-        TargetViewNesting = Nesting.Root;
-
-        profileAction = new SimpleAction(this, "ProfileThisView", PredefinedCategory.Tools)
-        {
-            Caption = "Profile This View",
-            ImageName = "Action_Debug_Start"
-        };
-        profileAction.Execute += ProfileAction_Execute;
-    }
-
-    private void ProfileAction_Execute(object? sender, SimpleActionExecuteEventArgs e)
-    {
-        var svc = Application.ServiceProvider.GetService<CircuitProfilerService>();
-        if (svc == null) { /* show warning, return */ return; }
-
-        MiniProfiler mp = svc.Start("Profile: Customer ListView");
-        using (svc.Step("Reload + aggregate"))
-        {
-            View.ObjectSpace.Refresh();          // re-issue EF queries the profiler captures
-            View.RefreshDataSource();
-
-            var customers = View.ObjectSpace.GetObjects<Customer>();
-            decimal grand = 0m;
-            using (svc.Step("Sum OrdersTotal (N+1)"))
-                foreach (var c in customers)
-                    grand += c.OrdersTotal;       // walking this forces per-row lazy load → N+1
-        }
-
-        // Execute is synchronous. Do NOT call svc.StopAndSaveAsync().GetAwaiter().GetResult()
-        // directly: you are on the Blazor circuit's single-threaded RendererSynchronizationContext,
-        // and StopAsync's continuation would post back to the very thread you are blocking → a
-        // permanent deadlock (the action hangs on the loading overlay). Offload to the thread pool
-        // (no ambient sync context) so the async chain's continuations never need the dispatcher:
-        Task.Run(() => svc.StopAndSaveAsync()).GetAwaiter().GetResult();
-
-        Application.ShowViewStrategy.ShowMessage(
-            $"Profiled. View results at /profiler/results?id={mp.Id}", InformationType.Success);
-    }
-
-    protected override void Dispose(bool disposing)
-    {
-        if (disposing) profileAction.Execute -= ProfileAction_Execute;
-        base.Dispose(disposing);
-    }
-}
-```
-
-**Result:** clicking the action persists a profile (e.g. *"Profile: Customer ListView"*) with
-nested `.Step()` markers, and — because `AddEntityFramework()` is active — the EF SQL issued
-during the steps is attached as **child timings** (the N+1 step holds thousands of SQL
-statements). All of it lands in `SqlServerStorage` and survives restarts.
-
-> **Anti-patterns avoided** (per the XAF ViewController patterns): no `async void` Execute
-> handler (exceptions after an `await` would crash the circuit); the action's event is
-> unsubscribed in `Dispose`; the View's **own** `ObjectSpace` is used (no leaked object space).
+**Why the deferred flush?** The collection source's `Disposed` event does **not** fire when the
+user navigates between ListViews (XAF keeps the previous view alive), so it can't be the load-END
+boundary. But each load's SQL is fully captured synchronously before any subsequent event — so we
+flush (`End`) the previous capture when the **next** load begins. The very last view's profiler is
+flushed by the next navigation (e.g. opening Profile Summary).
 
 ---
 
-## Step 6 — Browse profiles in-app (non-persistent ListView)
+## Step 7 — Browse + drill into profiles (non-persistent ListView)
 
-You can read the persisted profiles straight out of `SqlServerStorage` and surface them in an XAF
-list view, without the built-in `/profiler` UI. The view object is **non-persistent**.
+Read the persisted profiles straight out of `SqlServerStorage` and surface them in an XAF list +
+detail view. Both view objects are **non-persistent**.
 
-### 6a. The non-persistent object
+### 7a. The non-persistent objects
 
 ```csharp
 // BusinessObjects/ProfileSummary.cs
-[DomainComponent]
-[DefaultClassOptions]
-[DefaultProperty(nameof(Name))]
+[DomainComponent, DefaultClassOptions, DefaultProperty(nameof(Operation))]
 public class ProfileSummary
 {
     [Browsable(false)]
     [DevExpress.ExpressApp.Data.Key]   // ← XAF non-persistent key, NOT DataAnnotations.Key
     public Guid Id { get; set; }
-    public string? Name { get; set; }
+    public string? Operation { get; set; }     // profiler Name, e.g. "Customer · ListView load"
     public DateTime Started { get; set; }
     public double DurationMs { get; set; }
-    public string? ResultsUrl { get; set; }
+    public int QueryCount { get; set; }
+    public double SlowestQueryMs { get; set; }
+
+    [VisibleInListView(false)]
+    public IList<ProfileQuery> Queries { get; set; } = new List<ProfileQuery>();
+}
+
+// BusinessObjects/ProfileQuery.cs
+[DomainComponent, DefaultProperty(nameof(Sql))]
+public class ProfileQuery
+{
+    [Browsable(false)]
+    [DevExpress.ExpressApp.Data.Key]
+    public Guid Id { get; set; }
+    public string? Sql { get; set; }
+    public double DurationMs { get; set; }
+    public int ExecuteCount { get; set; }   // how many times this SQL ran (the N+1 signal)
 }
 ```
 
-### 6b. The controller — subscribe via `ObjectSpaceCreated`, from a `WindowController`
+> **Do not** derive these from a persistent base (e.g. EF Core `BaseObject`) — that routes the
+> ListView to an `EFCoreObjectSpace` and `ObjectsGetting` never fires. A plain POCO with
+> `[DomainComponent]` + an explicit XAF key is the correct non-persistent pattern.
+
+### 7b. The projection (timing tree → view objects)
+
+A pure helper walks the loaded `MiniProfiler`'s timing tree, reads every `CustomTimings["sql"]`
+entry, and groups by command text so repeats become `ExecuteCount`:
 
 ```csharp
-// Controllers/ProfileSummaryController.cs
+// Services/ProfileProjection.cs (shape)
+public static ProfileSummary BuildSummary(NonPersistentObjectSpace npos, MiniProfiler p);  // list rows (Queries empty)
+public static ProfileSummary BuildDetail (NonPersistentObjectSpace npos, MiniProfiler p);  // detail (Queries populated)
+public static IList<ProfileQuery> BuildQueries(NonPersistentObjectSpace npos, MiniProfiler p);
+
+// Every object is created via npos.CreateObject<T>() (NOT `new`), then:
+private static void MarkExisting(NonPersistentObjectSpace npos, object obj)
+    => npos.RemoveFromModifiedObjects(obj);   // ← fixes error 1057 (see gotcha)
+```
+
+`BuildQueries` groups SQL timings by command text, sets `DurationMs` to the **summed** duration
+across executions and `ExecuteCount` to the group size, then orders slowest-total first — so a
+query run 10×5ms outranks a single 45ms query (exactly the N+1 you want surfaced).
+
+### 7c. The browse controller — subscribe via `ObjectSpaceCreated`, from a `WindowController`
+
+```csharp
+// Controllers/ProfileSummaryController.cs (shape)
 public sealed class ProfileSummaryController : WindowController
 {
     public ProfileSummaryController() => TargetWindowType = WindowType.Main;
@@ -347,69 +502,66 @@ public sealed class ProfileSummaryController : WindowController
     protected override void OnActivated()
     {
         base.OnActivated();
-        Application.ObjectSpaceCreated += Application_ObjectSpaceCreated;
-    }
-
-    protected override void OnDeactivated()
-    {
-        Application.ObjectSpaceCreated -= Application_ObjectSpaceCreated;
-        base.OnDeactivated();
-    }
-
-    private void Application_ObjectSpaceCreated(object? sender, ObjectSpaceCreatedEventArgs e)
-    {
-        if (e.ObjectSpace is not NonPersistentObjectSpace npos) return;
-
-        npos.ObjectsGetting     += ObjectSpace_ObjectsGetting;
-        npos.ObjectByKeyGetting += ObjectSpace_ObjectByKeyGetting;
-
-        void OnDisposed(object? s, EventArgs args) // detach so we don't pin the object space
+        Application.ObjectSpaceCreated += (s, e) =>
         {
-            npos.ObjectsGetting     -= ObjectSpace_ObjectsGetting;
-            npos.ObjectByKeyGetting -= ObjectSpace_ObjectByKeyGetting;
-            npos.Disposed           -= OnDisposed;
-        }
-        npos.Disposed += OnDisposed;
+            if (e.ObjectSpace is not NonPersistentObjectSpace npos) return;
+            npos.ObjectsGetting     += ObjectsGetting;     // detach on npos.Disposed
+            npos.ObjectByKeyGetting += ObjectByKeyGetting;
+        };
     }
 
-    private static IAsyncStorage? GetStorage() => MiniProfiler.DefaultOptions?.Storage;
+    private static IAsyncStorage? Storage => MiniProfiler.DefaultOptions?.Storage;
 
-    private void ObjectSpace_ObjectsGetting(object? sender, ObjectsGettingEventArgs e)
+    private void ObjectsGetting(object? sender, ObjectsGettingEventArgs e)
     {
         if (e.ObjectType != typeof(ProfileSummary)) return;
         var npos = (NonPersistentObjectSpace)sender!;
         var list = new BindingList<ProfileSummary> { AllowNew = false, AllowRemove = false };
-        var storage = GetStorage();
-        if (storage != null)
-            foreach (var id in storage.List(100))
-            {
-                var p = storage.Load(id);
-                if (p != null) list.Add(ToSummary(npos, p)); // ToSummary uses npos.CreateObject<T>()
-            }
+        foreach (var id in Storage!.List(200, orderBy: ListResultsOrder.Descending))
+            if (Storage.Load(id) is { } p) list.Add(ProfileProjection.BuildSummary(npos, p));
         e.Objects = list;
     }
 
-    private void ObjectSpace_ObjectByKeyGetting(object? sender, ObjectByKeyGettingEventArgs e)
+    private void ObjectByKeyGetting(object? sender, ObjectByKeyGettingEventArgs e)
     {
-        if (e.ObjectType == typeof(ProfileSummary) && e.Key is Guid id)
-        {
-            var p = GetStorage()?.Load(id);
-            if (p != null) e.Object = ToSummary((NonPersistentObjectSpace)sender!, p);
-        }
+        if (e.ObjectType == typeof(ProfileSummary) && e.Key is Guid id && Storage?.Load(id) is { } p)
+            e.Object = ProfileProjection.BuildDetail((NonPersistentObjectSpace)sender!, p);
     }
 }
 ```
 
-> **Always create rows with `((NonPersistentObjectSpace)sender).CreateObject<T>()`**, never
-> `new` — otherwise XAF throws error 1021 ("object belongs to another ObjectSpace").
+### 7d. The detail controller — fill the nested grid (the easy-to-miss bug)
 
-### 6c. The model — set the ListView to Client mode
+When you open a DetailView by double-clicking a ListView row, XAF **reuses the list row's object**
+(built by `BuildSummary`, whose `Queries` is empty) instead of re-fetching via `ObjectByKeyGetting`
+→ `BuildDetail`. So the nested grid is empty unless a DetailView controller fills it on activation:
+
+```csharp
+// Controllers/ProfileSummaryDetailController.cs (shape)
+public sealed class ProfileSummaryDetailController : ObjectViewController<DetailView, ProfileSummary>
+{
+    protected override void OnActivated()
+    {
+        base.OnActivated();
+        if (View?.CurrentObject is not ProfileSummary s || s.Queries is { Count: > 0 }) return;
+        if (ObjectSpace is not NonPersistentObjectSpace npos) return;
+        if (MiniProfiler.DefaultOptions?.Storage?.Load(s.Id) is { } p)
+            s.Queries = ProfileProjection.BuildQueries(npos, p);
+    }
+}
+```
+
+### 7e. The model — Client mode + read-only for all three views
 
 ```xml
 <!-- Model.xafml -->
 <Application>
   <Views>
-    <ListView Id="ProfileSummary_ListView" DataAccessMode="Client" />
+    <ListView   Id="ProfileSummary_ListView"         DataAccessMode="Client"
+                AllowEdit="False" AllowNew="False" AllowDelete="False" />
+    <ListView   Id="ProfileSummary_Queries_ListView" DataAccessMode="Client"
+                AllowEdit="False" AllowNew="False" AllowDelete="False" />
+    <DetailView Id="ProfileSummary_DetailView"        AllowEdit="False" />
   </Views>
 </Application>
 ```
@@ -423,32 +575,64 @@ three** of these hold. Each was verified the hard way in this POC:
 | --- | --- | --- | --- |
 | 1 | `DataAccessMode=Client` on the ListView (`Model.xafml`) | Blazor defaults to **Queryable**, which builds an `IQueryable` against a data store and **never raises `ObjectsGetting`** for a storeless type | Columns render, grid stays empty, no error |
 | 2 | Key uses `DevExpress.ExpressApp.Data.Key` | XAF's non-persistent key detection ignores `System.ComponentModel.DataAnnotations.Key` (that's the EF Core key) | Error **1037** / `ArgumentException` "without a public key property" during `CreateListView` |
-| 3 | Subscribe via `XafApplication.ObjectSpaceCreated` from a **`WindowController`**, not a per-view `ViewController.OnActivated` | The collection source requests objects **during view creation**, before per-view controllers activate — so `OnActivated` subscribes too late and the one-time population fires into nothing | Columns render, grid stays empty, no error, `ObjectsGetting` "never fires" |
+| 3 | Subscribe via `XafApplication.ObjectSpaceCreated` from a **`WindowController`**, not a per-view `ViewController.OnActivated` | The collection source requests objects **during view creation**, before per-view controllers activate — so `OnActivated` subscribes too late | Columns render, grid stays empty, no error, `ObjectsGetting` "never fires" |
 
 References (DevExpress docs):
 - List View Data Access Modes — <https://docs.devexpress.com/eXpressAppFramework/113683>
 - Client Mode — <https://docs.devexpress.com/eXpressAppFramework/118449>
 - Non-Persistent Objects (Key Property) — <https://docs.devexpress.com/eXpressAppFramework/116516>
+- Detail View reuses the List View's object — <https://docs.devexpress.com/eXpressAppFramework/401747>
+- `CreateObject` marks objects new; `RemoveFromModifiedObjects` — <https://docs.devexpress.com/eXpressAppFramework/113471>
 
 ---
 
-## Step 7 — Inject the popup (optional)
+## Step 8 — Cleanup + retention
 
-To render the MiniProfiler popup in the XAF Blazor host, add the tag helper to the host page.
-In `Pages/_ViewImports.cshtml`:
+### 8a. Direct-SQL maintenance helper
 
-```cshtml
-@addTagHelper *, MiniProfiler.AspNetCore.Mvc
+`SqlServerStorage` has no bulk-delete API, so a small helper does parameterized direct SQL against
+the three tables (children first, to respect FK constraints):
+
+```csharp
+// Services/ProfileStore.cs (API)
+public static void ClearAll   (string connectionString, ILogger? logger = null);
+public static void DeleteByIds(string connectionString, IEnumerable<Guid> ids, ILogger? logger = null);
+public static void TrimToNewest(string connectionString, int keep, ILogger? logger = null); // keep<=0 ⇒ no-op
 ```
 
-In `Pages/_Host.cshtml` (inside `<body>`):
+`TrimToNewest` keeps the newest `keep` by `Started` (guarding `keep<=0`, which would otherwise wipe
+everything). It is called fire-and-forget after each save by `OperationCaptureRegistry.End`.
 
-```cshtml
-<mini-profiler />
+### 8b. The maintenance actions
+
+A ViewController targeting the `ProfileSummary` ListView adds two `Tools` actions:
+
+```csharp
+// Controllers/ProfileMaintenanceController.cs (shape)
+public sealed class ProfileMaintenanceController : ViewController
+{
+    public ProfileMaintenanceController()
+    {
+        TargetObjectType = typeof(ProfileSummary);
+        TargetViewType   = ViewType.ListView;
+
+        var clear = new SimpleAction(this, "ClearProfiles", "Tools")
+        { Caption = "Clear Profiles", ConfirmationMessage = "Delete ALL stored profiles?" };
+        clear.Execute += (s, e) => { ProfileStore.ClearAll(ConnStr); View.ObjectSpace.Refresh(); };
+
+        var del = new SimpleAction(this, "DeleteSelectedProfiles", "Tools")
+        { Caption = "Delete Selected", SelectionDependencyType = SelectionDependencyType.RequireMultipleObjects };
+        del.Execute += (s, e) =>
+        {
+            var ids = e.SelectedObjects.OfType<ProfileSummary>().Select(p => p.Id).ToList();
+            ProfileStore.DeleteByIds(ConnStr, ids); View.ObjectSpace.Refresh();
+        };
+    }
+}
 ```
 
-When the flag is on, the browser console shows a "MiniProfiler Init" entry and the popup renders
-for HTTP requests.
+(Both unsubscribe in `Dispose`; the real controller resolves the connection string from
+`IConfiguration` and shows success/error toasts.)
 
 ---
 
@@ -459,13 +643,16 @@ clicks can silently no-op.
 
 - [ ] `dotnet build XAFProfiler.slnx` → 0 warnings / 0 errors.
 - [ ] App runs; you can log in.
-- [ ] **Layer A:** with the flag on, "MiniProfiler Init" appears in the browser console.
-- [ ] **Layer B:** clicking "Profile This View" inserts a row in `MiniProfilers`
-      (`SELECT COUNT(*) FROM MiniProfilers`), and the N+1 step holds many child SQL timings.
-- [ ] **Layer C:** the profile count survives an app restart.
-- [ ] **Browse view:** the **Profile Summary** ListView shows rows; cross-check one row's GUID
-      against `MiniProfilers`.
-- [ ] **Negative:** flag off → no `mini-profiler` script on the page.
+- [ ] **Capture:** open the Customer ListView, then navigate away. A `Customer · ListView load` row
+      appears in `MiniProfilers` (`SELECT COUNT(*) FROM MiniProfilers`).
+- [ ] **EF SQL captured:** that profile's `QueryCount` > 0; its DetailView lists SQL, and the N+1
+      shows as an `OrderLines` SELECT with a high `ExecuteCount`.
+- [ ] **No noise:** no `/_blazor`, `/_Host`, or `GET /` rows are persisted (`ShouldProfile=false`).
+- [ ] **Persistence:** the profile count survives an app restart.
+- [ ] **Drill-down:** double-clicking a row opens the DetailView with a populated Queries grid (no
+      error 1057, no empty nested grid).
+- [ ] **Cleanup:** "Clear Profiles" → `SELECT COUNT(*) FROM MiniProfilers` = 0. Save > 200 profiles
+      → count caps at 200.
 
 ---
 
@@ -473,14 +660,18 @@ clicks can silently no-op.
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
+| Ambient profiles created but **0 SQL captured** | MiniProfiler's EF interceptor logs to `AsyncLocal` `MiniProfiler.Current`, which is null on the grid's async chain | Capture with a custom `DbCommandInterceptor` onto an **explicitly-held** profiler keyed by `DbContext` (Step 5) |
+| `MiniProfiler.Current` null in a circuit event | Circuit events have no `HttpContext` | Don't use `Current`; hold the profiler explicitly via `OperationCaptureRegistry` |
+| Load **hangs forever** on the loading overlay | `StopAsync().GetAwaiter().GetResult()` deadlocks on the circuit's `RendererSynchronizationContext` | `Task.Run(() => profiler.StopAsync(false)).GetAwaiter().GetResult()` |
+| Last view's profile never appears | Collection source `Disposed` doesn't fire on navigation | Deferred flush: `End` the previous capture when the **next** load begins |
+| Noise rows (`GET /`, `/_Host`, `/_blazor`) in storage | MiniProfiler HTTP auto-profiling is on | `options.ShouldProfile = _ => false` |
 | Profile Summary grid empty, no error | Blazor default Queryable mode never raises `ObjectsGetting` | `DataAccessMode=Client` on the ListView node |
-| Error 1037 / "without a public key property" | Used `DataAnnotations.Key` instead of XAF's key | `DevExpress.ExpressApp.Data.Key` |
+| Error **1037** / "without a public key property" | Used `DataAnnotations.Key` instead of XAF's key | `DevExpress.ExpressApp.Data.Key` |
 | Grid empty even in Client mode | Subscribed in `ViewController.OnActivated` (too late) | Subscribe via `Application.ObjectSpaceCreated` in a `WindowController` |
-| Error 1021 "belongs to another ObjectSpace" | Created rows with `new` | `objectSpace.CreateObject<T>()` on the event's `sender` |
+| Error **1021** "belongs to another ObjectSpace" | Created rows with `new` | `npos.CreateObject<T>()` on the event's `sender` |
+| Error **1057** "newly created record cannot be shown" on double-click | `CreateObject<T>()` marks the projection as a *new* object | `npos.RemoveFromModifiedObjects(obj)` after building it |
+| Nested Queries grid empty on the DetailView | DetailView reuses the list row's object (Queries left empty), doesn't re-fetch | Populate `Queries` in a DetailView controller's `OnActivated` |
 | `/profiler/results-index` returns 200 with flag off | No `/profiler` route → SPA catch-all serves the shell | Expected; not a 404 |
-| Built-in `/profiler/results?id=` shows "hidden" | `ResultsAuthorize` doesn't see the XAF auth cookie on a raw fetch | Use the in-app Profile Summary view, or adjust the authorize delegate |
-| `MiniProfiler.Current` null in a button click | Circuit events have no `HttpContext` | Use the scoped `CircuitProfilerService` + manual `StartNew/Step/StopAsync` |
-| "Profile This View" hangs forever on the loading overlay | `StopAndSaveAsync().GetAwaiter().GetResult()` deadlocks on the circuit's `RendererSynchronizationContext` (continuation posts back to the blocked dispatcher thread) | `Task.Run(() => svc.StopAndSaveAsync()).GetAwaiter().GetResult()` — runs the async chain with no ambient sync context |
 | `SqlServerStorage` "Invalid object name 'MiniProfilers'" | Tables/DB not created (XAF creates its DB lazily) | `ProfilerStorageInitializer.EnsureTables` at startup |
 
 ---
