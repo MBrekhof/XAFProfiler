@@ -99,6 +99,42 @@ Both projected from `storage.Load(id)`'s MiniProfiler timing tree (walk `Root` t
 - Save > 200 profiles → count caps at 200.
 - All UI claims verified via SQL + grid row data, not screenshots alone.
 
+## REVISION 2026-05-31 — capture via EF Core interceptor (Approach 2)
+
+**Why:** The originally-approved mechanism (Approach 1: `MiniProfiler.StartNew` around the
+ListView `CollectionChanging`/`Changed` events) was implemented and runtime-tested. It creates
+correctly-named profiles BUT captures **zero EF SQL**: MiniProfiler's EF interceptor logs to the
+`AsyncLocal` `MiniProfiler.Current`, and the DevExpress grid materializes its query on a separate
+async chain where `Current` is null. Verified: ambient `· ListView load` profiles had 1 timing
+row and 0 custom (SQL) timings. The EF-Core goal requires reliable capture, so we pivot to a
+custom `DbCommandInterceptor` (brainstorming Approach 2). User-approved 2026-05-31.
+
+**Capture mechanism (revised):**
+- `QueryCaptureInterceptor : DbCommandInterceptor` (singleton), registered on the app DbContext
+  via `options.AddInterceptors(...)` in Startup's `WithDbContext`. Overrides the
+  `*Executed`/`*ExecutedAsync` callbacks; on each, reads the `DbContext` from
+  `CommandExecutedEventData.Context` and looks up that context's *current operation* in a
+  `ConditionalWeakTable<DbContext, OperationCapture>`. If an operation is active, it appends the
+  command (text + duration) onto that operation's explicitly-held `MiniProfiler` instance as a
+  `"sql"` custom timing — NOT via `MiniProfiler.Current`. This sidesteps the AsyncLocal problem.
+- Attribution is by **DbContext instance**, because the grid loads through the View's
+  object-space DbContext — the same context the interceptor sees.
+- The existing ambient controller (`AmbientProfilingController`, from the Approach-1 commit) is
+  retained but repurposed: on `CollectionChanging` it calls `capture.Begin(dbContext, "<Class> ·
+  ListView load")` (which `MiniProfiler.StartNew`s an explicit instance and registers it in the
+  weak table); on `CollectionChanged` it calls `capture.End(dbContext)` which stops+saves
+  (`Task.Run(() => p.StopAsync(false)).GetAwaiter().GetResult()` — mandatory offload) and clears
+  the table entry. View-skip (ProfileSummary/ProfileQuery) and the `Profiling:Enabled` gate stay.
+- Reaching the DbContext from an XAF `EFCoreObjectSpace`: verified during the spike (Task 6a).
+
+**Storage unchanged:** still MiniProfiler `SqlServerStorage`; the browse list, projection,
+DetailView, cleanup, and retention (Tasks 2–5, 7) are untouched and keep working, because the
+interceptor produces the same MiniProfiler-with-sql-custom-timings shape the projection reads.
+
+**De-risking:** Task 6a is a spike proving (1) we can obtain the DbContext from the ListView's
+object space, and (2) the interceptor captures the grid's actual SQL onto our held profiler. Only
+after the spike confirms both do we build the full interceptor + controller wiring.
+
 ## Port-back notes (WLNCentral)
 
 Carry: the ambient capture controller, the `Task.Run` stop, the noise filter, the non-persistent browse+detail pattern (Client mode + DX key + ObjectSpaceCreated), and the cleanup/retention. This replaces WLNCentral's deferred items with a working, EF-focused profiler.
