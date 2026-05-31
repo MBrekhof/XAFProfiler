@@ -17,8 +17,10 @@ namespace XAFProfiler.Blazor.Server.Services
     /// </summary>
     public static class ProfileProjection
     {
-        /// <summary>The MiniProfiler custom-timing category key for EF Core / ADO SQL statements.</summary>
-        private const string SqlTimingKey = "sql";
+        /// <summary>The MiniProfiler custom-timing category key for EF Core / ADO SQL statements.
+        /// Shared with <see cref="OperationCaptureRegistry"/> via <see cref="ProfilingConstants.SqlTimingKey"/>
+        /// — reader and writer MUST agree on this key.</summary>
+        private const string SqlTimingKey = ProfilingConstants.SqlTimingKey;
 
         /// <summary>
         /// Builds a <see cref="ProfileSummary"/> suitable for list-view display.

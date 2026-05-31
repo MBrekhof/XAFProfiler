@@ -32,8 +32,10 @@ namespace XAFProfiler.Blazor.Server.Services
     /// </summary>
     public sealed class OperationCaptureRegistry
     {
-        /// <summary>The MiniProfiler custom-timing category for EF Core / ADO SQL statements.</summary>
-        private const string SqlTimingKey = "sql";
+        /// <summary>The MiniProfiler custom-timing category for EF Core / ADO SQL statements.
+        /// Shared with <see cref="ProfileProjection"/> via <see cref="ProfilingConstants.SqlTimingKey"/>
+        /// — writer and reader MUST agree on this key.</summary>
+        private const string SqlTimingKey = ProfilingConstants.SqlTimingKey;
 
         private const int RetentionLimit = 200;
 
