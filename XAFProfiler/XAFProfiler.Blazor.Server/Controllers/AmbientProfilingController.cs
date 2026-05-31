@@ -1,73 +1,65 @@
 #nullable enable
 using DevExpress.ExpressApp;
+using DevExpress.ExpressApp.EFCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using StackExchange.Profiling;
 using XAFProfiler.Blazor.Server.BusinessObjects;
+using XAFProfiler.Blazor.Server.Services;
 
 namespace XAFProfiler.Blazor.Server.Controllers
 {
     /// <summary>
-    /// Automatically profiles every ListView data-load by wrapping the collection-source
-    /// lifetime with a <see cref="MiniProfiler"/>.
+    /// Automatically profiles every ListView data-load by bracketing the collection-source load
+    /// with an <see cref="OperationCaptureRegistry"/> operation keyed by the view's EF Core
+    /// <see cref="DbContext"/>.
     ///
     /// <para>
-    /// <b>Blazor Server EF Core data-load architecture</b><br/>
-    /// In XAF Blazor Server (EF Core, Client mode) the initial data load is split across two
-    /// phases:
+    /// <b>How SQL is captured (interceptor approach)</b><br/>
+    /// MiniProfiler's own EF interceptor logs to the <c>AsyncLocal</c> <c>MiniProfiler.Current</c>,
+    /// which is <c>null</c> on the DevExpress grid's materialisation chain — so it captured zero
+    /// SQL. Instead, this controller calls <see cref="OperationCaptureRegistry.Begin"/> with the
+    /// view's DbContext when the load starts; the singleton <see cref="QueryCaptureInterceptor"/>
+    /// (registered on the DbContext) then appends every executed command onto the explicitly-held
+    /// profiler for that DbContext instance. The profiler is stopped+saved via
+    /// <see cref="OperationCaptureRegistry.End"/>. The controller never touches
+    /// <c>MiniProfiler.Current</c>.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>Load boundaries (verified at runtime)</b><br/>
+    /// In XAF Blazor Server (EF Core, Client mode) the observed sequence for a ListView load is:
     /// <list type="number">
+    ///   <item><c>ListViewCreating</c> → we subscribe to the collection source.</item>
+    ///   <item><c>CollectionChanging</c> → <see cref="OperationCaptureRegistry.Begin"/> (operation opens).</item>
+    ///   <item><c>CollectionChanged</c> → the <c>IQueryable</c> exists; the grid then materialises it.</item>
     ///   <item>
-    ///     <c>CollectionChanging</c> / <c>CollectionChanged</c> fire when the
-    ///     <see cref="CollectionSourceBase"/> calls <c>ResetCollection</c> and creates an
-    ///     <c>IQueryable&lt;T&gt;</c>. No SQL has run yet.
-    ///   </item>
-    ///   <item>
-    ///     The DxGrid materialises the <c>IQueryable</c> asynchronously after
-    ///     <c>CollectionChanged</c> — this is when EF actually executes the SQL SELECT.
+    ///     The grid SELECT and XAF's prefetch N+1 follow-up SELECTs execute <b>synchronously on the
+    ///     circuit thread, immediately after <c>CollectionChanged</c></b> and entirely before the
+    ///     next top-level event — the interceptor attaches them all to the open profiler.
     ///   </item>
     /// </list>
-    /// Stopping the profiler on <c>CollectionChanged</c> therefore closes the window before
-    /// the SQL runs and the MiniProfiler EF interceptor cannot attach any timings.
+    /// Crucially, the collection source's <c>Disposed</c> event does <b>not</b> fire when the user
+    /// navigates between ListViews (XAF keeps the previous view alive), so it is unusable as the
+    /// load-END boundary. Because each load's SQL is fully captured before any subsequent event, we
+    /// instead <b>flush (End) the previously-open capture when the next load Begins</b> (the
+    /// "deferred flush" below), and also flush on <c>CollectionReloaded</c> (Refresh) and
+    /// <c>Disposed</c> (when it does fire). The very last view's profiler is flushed by the next
+    /// navigation (e.g. opening Profile Summary to inspect results).
     /// </para>
     ///
-    /// <para>
-    /// <b>Strategy</b><br/>
-    /// Start a profiler on <c>CollectionChanging</c> (first load) or
-    /// <c>CollectionReloading</c> (Refresh button). Keep it alive — <c>MiniProfiler.Current</c>
-    /// flows via <c>AsyncLocal</c> to the grid's async EF call — and stop+save it when the
-    /// collection source is <em>disposed</em> (view navigated away). This captures all EF SQL
-    /// emitted during the view's lifetime while the profiler is open.
-    ///
-    /// For the Refresh path (which calls <c>Reload()</c>) we start a fresh profiler on
-    /// <c>CollectionReloading</c> and stop it on <c>CollectionReloaded</c>: those two events
-    /// bracket the actual database round-trip synchronously.
-    /// </para>
-    ///
-    /// <para>
-    /// <b>Why <c>ListViewCreating</c>, not <c>ListViewCreated</c>?</b><br/>
-    /// <c>ListViewCreated</c> fires AFTER the ListView is built and
-    /// <c>CollectionChanging/Changed</c> have already fired. We need to subscribe to the
-    /// collection source BEFORE it creates its first collection, so we use
-    /// <c>ListViewCreating</c>.
-    /// </para>
-    ///
-    /// <para>
-    /// <b>Thread-safety / deadlock note</b><br/>
-    /// <see cref="MiniProfiler.StopAsync"/> is called via
-    /// <c>Task.Run(...).GetAwaiter().GetResult()</c>. Calling it directly on the Blazor circuit's
-    /// <c>RendererSynchronizationContext</c> deadlocks.
-    /// </para>
-    ///
-    /// Gate: reads <c>Profiling:Enabled</c> from <see cref="IConfiguration"/>; if absent or
-    /// false the controller stays completely inert.
-    ///
-    /// Meta-noise guard: <see cref="ProfileSummary"/> and <see cref="ProfileQuery"/> views
-    /// are skipped.
+    /// Gate: reads <c>Profiling:Enabled</c>; inert if absent/false. Skips <see cref="ProfileSummary"/>
+    /// / <see cref="ProfileQuery"/> views (the profiler's own surface).
     /// </summary>
     public sealed class AmbientProfilingController : WindowController
     {
         private ILogger<AmbientProfilingController>? _logger;
+        private OperationCaptureRegistry? _registry;
+
+        // The single still-open capture (its DbContext), flushed when the next load begins.
+        // Access is serialized on the Blazor circuit; a lock in the registry guards table mutation.
+        private DbContext? _openContext;
 
         public AmbientProfilingController()
         {
@@ -85,16 +77,25 @@ namespace XAFProfiler.Blazor.Server.Controllers
             }
 
             _logger = Application.ServiceProvider?.GetService<ILogger<AmbientProfilingController>>();
+            _registry = Application.ServiceProvider?.GetService<OperationCaptureRegistry>();
+            if (_registry == null)
+            {
+                _logger?.LogWarning(
+                    "AmbientProfilingController: OperationCaptureRegistry not resolvable; capture disabled.");
+                return;
+            }
 
-            // IMPORTANT: ListViewCreating (before construction), not ListViewCreated.
-            // CollectionChanging/Changed fire DURING ListView construction — subscribing here
-            // lets us attach before the first collection-recreation event fires.
+            // ListViewCreating (before construction), not ListViewCreated: CollectionChanging/Changed
+            // fire DURING ListView construction, so we must subscribe to the collection source first.
             Application.ListViewCreating += Application_ListViewCreating;
         }
 
         protected override void OnDeactivated()
         {
             Application.ListViewCreating -= Application_ListViewCreating;
+            // Flush any still-open capture so the last view's profile is not lost on shutdown.
+            FlushOpen();
+            _registry = null;
             _logger = null;
             base.OnDeactivated();
         }
@@ -105,6 +106,15 @@ namespace XAFProfiler.Blazor.Server.Controllers
             typeof(ProfileQuery),
         };
 
+        /// <summary>Stops+saves the previously-open capture, if any. Best-effort.</summary>
+        private void FlushOpen()
+        {
+            var ctx = _openContext;
+            if (ctx == null) return;
+            _openContext = null;
+            _registry?.End(ctx);
+        }
+
         private void Application_ListViewCreating(object? sender, ListViewCreatingEventArgs e)
         {
             var collectionSource = e.CollectionSource;
@@ -113,110 +123,79 @@ namespace XAFProfiler.Blazor.Server.Controllers
             var objectType = collectionSource.ObjectTypeInfo?.Type;
             if (objectType == null || _skippedTypes.Contains(objectType)) return;
 
-            // Human-readable profile name.
-            var profileName = $"{objectType.Name} · ListView load";
+            var registry = _registry;
+            if (registry == null) return;
 
-            // Per-view mutable slot: simple array wrapper allows mutation inside closures.
-            MiniProfiler?[] profilerSlot = { null };
+            // Human-readable profile name. Prefer the model class caption; fall back to type name.
+            var caption = objectType.Name;
+            try
+            {
+                if (Application?.Model?.BOModel?.GetClass(objectType)?.Caption is { Length: > 0 } modelCaption)
+                {
+                    caption = modelCaption;
+                }
+            }
+            catch { /* caption is best-effort; type name is a fine fallback */ }
+            var profileName = $"{caption} · ListView load";
 
-            // ─── Helpers ───────────────────────────────────────────────────────────────
-
-            void StartNew()
+            // Resolve the EF Core DbContext for this load. This app has NO Security System, so the
+            // collection source's ObjectSpace is always a plain EFCoreObjectSpace (cast succeeds).
+            DbContext? ResolveDbContext()
             {
                 try
                 {
-                    // If somehow already running (shouldn't happen), discard it first.
-                    var prev = profilerSlot[0];
-                    if (prev != null)
+                    if (collectionSource.ObjectSpace is EFCoreObjectSpace efos)
                     {
-                        profilerSlot[0] = null;
-                        Task.Run(() => prev.StopAsync(discardResults: true)).GetAwaiter().GetResult();
+                        return efos.DbContext;
                     }
-
-                    var p = MiniProfiler.StartNew(profileName);
-                    profilerSlot[0] = p;
+                    _logger?.LogDebug(
+                        "AmbientProfilingController: ObjectSpace for '{Name}' is not EFCoreObjectSpace ({Type}).",
+                        profileName, collectionSource.ObjectSpace?.GetType().Name);
                 }
                 catch (Exception ex)
                 {
                     _logger?.LogError(ex,
-                        "AmbientProfilingController: failed to start profiler for '{Name}'.", profileName);
+                        "AmbientProfilingController: failed to resolve DbContext for '{Name}'.", profileName);
                 }
+                return null;
             }
 
-            void SaveAndClear()
+            void Begin()
             {
-                try
+                // Deferred flush: the previous load's SQL is fully captured by now (it ran
+                // synchronously before this event), so stop+save it before opening the new one.
+                FlushOpen();
+
+                var ctx = ResolveDbContext();
+                if (ctx != null)
                 {
-                    var p = profilerSlot[0];
-                    if (p == null) return;
-                    profilerSlot[0] = null;
-
-                    // MANDATORY Task.Run offload — avoids deadlock on Blazor
-                    // RendererSynchronizationContext (StopAsync re-enters the sync context).
-                    Task.Run(() => p.StopAsync(discardResults: false)).GetAwaiter().GetResult();
+                    registry.Begin(ctx, profileName);
+                    _openContext = ctx;
                 }
-                catch (Exception ex)
+            }
+
+            void End()
+            {
+                var ctx = ResolveDbContext();
+                if (ctx != null)
                 {
-                    _logger?.LogError(ex,
-                        "AmbientProfilingController: failed to stop profiler for '{Name}'.", profileName);
+                    if (ReferenceEquals(_openContext, ctx))
+                    {
+                        _openContext = null;
+                    }
+                    registry.End(ctx);
                 }
             }
 
-            void DiscardAndClear()
-            {
-                try
-                {
-                    var p = profilerSlot[0];
-                    if (p == null) return;
-                    profilerSlot[0] = null;
-                    Task.Run(() => p.StopAsync(discardResults: true)).GetAwaiter().GetResult();
-                }
-                catch { /* best-effort on dispose */ }
-            }
+            // Initial load: CollectionChanging opens the operation. The grid SELECT + prefetch N+1
+            // run synchronously after CollectionChanged; they are flushed by the next Begin (or by
+            // CollectionReloaded / Disposed / controller deactivation).
+            void OnCollectionChanging(object? s, EventArgs a) => Begin();
 
-            // ─── Phase A: Initial load via CollectionChanging / CollectionChanged ──────
-            //
-            // In Blazor Server (EF Core, Client mode) the sequence is:
-            //   1. CollectionChanging  → IQueryable<T> is about to be created.
-            //   2. CollectionChanged   → IQueryable<T> created; SQL not yet run.
-            //   3. DxGrid async enumerates IQueryable → EF SQL executes.
-            //   4. collectionSource.Disposed → view navigated away.
-            //
-            // We start on CollectionChanging and keep the profiler OPEN until Disposed so
-            // the EF interceptor (AddEntityFramework) can attach step-3 SQL timings to
-            // MiniProfiler.Current while the profiler is alive.
-            //
-            // We do NOT stop on CollectionChanged — stopping there closes the window before
-            // the SQL runs.
-
-            void OnCollectionChanging(object? s, EventArgs a)
-            {
-                StartNew();
-            }
-
-            // CollectionChanged: IQueryable created, profiler already running — do nothing.
-            // (No handler needed; the profiler stays open.)
-
-            // ─── Phase B: Refresh-button path via Reload() ────────────────────────────
-            //
-            // If the user clicks Refresh, XAF calls CollectionSource.Reload(), which raises
-            // CollectionReloading before the query and CollectionReloaded after. These bracket
-            // the EF round-trip synchronously, so we can start/stop cleanly here.
-
-            void OnCollectionReloading(object? s, EventArgs a)
-            {
-                StartNew();
-            }
-
-            void OnCollectionReloaded(object? s, EventArgs a)
-            {
-                SaveAndClear();
-            }
-
-            // ─── Cleanup: view navigated away ─────────────────────────────────────────
-            //
-            // Save (not discard) the Phase-A profiler here, because by the time the source
-            // is disposed the EF queries have already run and been attached to the profiler.
+            // Refresh path: CollectionReloading/Reloaded bracket the round-trip; the round-trip's
+            // SQL runs between them, so End() on Reloaded saves a fully-populated profiler.
+            void OnCollectionReloading(object? s, EventArgs a) => Begin();
+            void OnCollectionReloaded(object? s, EventArgs a) => End();
 
             void OnDisposed(object? s, EventArgs a)
             {
@@ -225,7 +204,7 @@ namespace XAFProfiler.Blazor.Server.Controllers
                 collectionSource.CollectionReloaded -= OnCollectionReloaded;
                 collectionSource.Disposed -= OnDisposed;
 
-                SaveAndClear();   // Save Phase-A profiler (EF SQL already attached by now).
+                End();   // Flush if this source's capture is still open (rarely fires on navigation).
             }
 
             collectionSource.CollectionChanging += OnCollectionChanging;

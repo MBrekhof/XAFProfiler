@@ -60,6 +60,15 @@ namespace XAFProfiler.Blazor.Server
                 }).AddEntityFramework();
             }
             services.AddScoped<CircuitHandler, CircuitHandlerProxy>();
+            if (Configuration.GetValue<bool>("Profiling:Enabled"))
+            {
+                // Ambient EF-Core SQL capture: the registry holds an explicit MiniProfiler per
+                // in-flight operation (keyed by DbContext), and the interceptor appends each
+                // executed command onto it. Registered as singletons so the interceptor (added to
+                // the DbContext options) and the AmbientProfilingController share one registry.
+                services.AddSingleton<OperationCaptureRegistry>();
+                services.AddSingleton<QueryCaptureInterceptor>();
+            }
             services.AddXaf(Configuration, builder =>
             {
                 builder.UseApplication<XAFProfilerBlazorApplication>();
@@ -97,6 +106,13 @@ namespace XAFProfiler.Blazor.Server
 #endif
                         ArgumentNullException.ThrowIfNull(connectionString);
                         options.UseConnectionString(connectionString);
+                        if (Configuration.GetValue<bool>("Profiling:Enabled"))
+                        {
+                            // Capture every EF SQL command onto the per-operation profiler held by
+                            // OperationCaptureRegistry, attributed by this DbContext instance.
+                            options.AddInterceptors(
+                                serviceProvider.GetRequiredService<QueryCaptureInterceptor>());
+                        }
                     })
                     .AddNonPersistent();
             });
