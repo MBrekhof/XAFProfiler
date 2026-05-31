@@ -38,14 +38,14 @@ namespace XAFProfiler.Blazor.Server.Services
             _logger = logger;
         }
 
-        private void Capture(DbCommand command, CommandExecutedEventData eventData)
+        private void Capture(DbCommand command, CommandExecutedEventData eventData, string executeType)
         {
             try
             {
                 if (eventData.Context is { } ctx &&
                     _registry.TryGetCurrent(ctx, out var capture))
                 {
-                    capture.AddSql(command.CommandText, eventData.Duration.TotalMilliseconds);
+                    capture.AddSql(command.CommandText, eventData.Duration.TotalMilliseconds, executeType);
                 }
             }
             catch (Exception ex)
@@ -59,7 +59,7 @@ namespace XAFProfiler.Blazor.Server.Services
         public override DbDataReader ReaderExecuted(
             DbCommand command, CommandExecutedEventData eventData, DbDataReader result)
         {
-            Capture(command, eventData);
+            Capture(command, eventData, "Reader");
             return base.ReaderExecuted(command, eventData, result);
         }
 
@@ -67,7 +67,7 @@ namespace XAFProfiler.Blazor.Server.Services
             DbCommand command, CommandExecutedEventData eventData, DbDataReader result,
             CancellationToken cancellationToken = default)
         {
-            Capture(command, eventData);
+            Capture(command, eventData, "Reader");
             return base.ReaderExecutedAsync(command, eventData, result, cancellationToken);
         }
 
@@ -76,7 +76,7 @@ namespace XAFProfiler.Blazor.Server.Services
         public override object? ScalarExecuted(
             DbCommand command, CommandExecutedEventData eventData, object? result)
         {
-            Capture(command, eventData);
+            Capture(command, eventData, "Scalar");
             return base.ScalarExecuted(command, eventData, result);
         }
 
@@ -84,7 +84,7 @@ namespace XAFProfiler.Blazor.Server.Services
             DbCommand command, CommandExecutedEventData eventData, object? result,
             CancellationToken cancellationToken = default)
         {
-            Capture(command, eventData);
+            Capture(command, eventData, "Scalar");
             return base.ScalarExecutedAsync(command, eventData, result, cancellationToken);
         }
 
@@ -93,7 +93,7 @@ namespace XAFProfiler.Blazor.Server.Services
         public override int NonQueryExecuted(
             DbCommand command, CommandExecutedEventData eventData, int result)
         {
-            Capture(command, eventData);
+            Capture(command, eventData, "NonQuery");
             return base.NonQueryExecuted(command, eventData, result);
         }
 
@@ -101,7 +101,7 @@ namespace XAFProfiler.Blazor.Server.Services
             DbCommand command, CommandExecutedEventData eventData, int result,
             CancellationToken cancellationToken = default)
         {
-            Capture(command, eventData);
+            Capture(command, eventData, "NonQuery");
             return base.NonQueryExecutedAsync(command, eventData, result, cancellationToken);
         }
     }

@@ -63,8 +63,19 @@ namespace XAFProfiler.Blazor.Server.Services
             /// root timing, so <c>ProfileProjection</c> can later read it via
             /// <c>profiler.Root.CustomTimings["sql"]</c>. Best-effort; never throws.
             /// </summary>
-            public void AddSql(string commandText, double durationMs)
+            /// <param name="commandText">The SQL command text.</param>
+            /// <param name="durationMs">The measured execution time, in milliseconds.</param>
+            /// <param name="executeType">
+            /// The command kind ("Reader", "Scalar", "NonQuery"); recorded on the
+            /// <see cref="CustomTiming.ExecuteType"/> for forward-looking correctness
+            /// (ProfileProjection does not read it today).
+            /// </param>
+            public void AddSql(string commandText, double durationMs, string executeType)
             {
+                // Safe without locking: EF Core executes commands serially per DbContext (DbContext
+                // is not thread-safe by contract), so AddSql is never called concurrently for the
+                // same OperationCapture; ProfileProjection only reads CustomTimings after StopAsync
+                // has returned (a later user navigation), so there is no concurrent read/write.
                 try
                 {
                     var root = Profiler.Root;
@@ -77,7 +88,7 @@ namespace XAFProfiler.Blazor.Server.Services
                     var ct = new CustomTiming(Profiler, commandText)
                     {
                         DurationMilliseconds = (decimal)durationMs,
-                        ExecuteType = "Query",
+                        ExecuteType = executeType,
                     };
                     root.AddCustomTiming(SqlTimingKey, ct);
                 }
@@ -104,7 +115,11 @@ namespace XAFProfiler.Blazor.Server.Services
 
                 lock (_gate)
                 {
-                    _active.Remove(ctx);
+                    if (_active.Remove(ctx))
+                    {
+                        _logger?.LogWarning(
+                            "Replacing an unsaved capture for the same DbContext; previous operation profile is discarded. This is unexpected in single-window use.");
+                    }
                     _active.Add(ctx, new OperationCapture(profiler, _logger));
                 }
             }
