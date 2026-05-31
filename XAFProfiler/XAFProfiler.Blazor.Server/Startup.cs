@@ -39,6 +39,14 @@ namespace XAFProfiler.Blazor.Server
                     options.PopupShowTimeWithChildren = true;
                     options.TrackConnectionOpenClose = true;
                     options.ColorScheme = StackExchange.Profiling.ColorScheme.Auto;
+                    options.ShouldProfile = request =>
+                    {
+                        var path = request.Path.Value ?? string.Empty;
+                        return !(path.StartsWith("/_blazor", StringComparison.OrdinalIgnoreCase)
+                              || path.StartsWith("/_framework", StringComparison.OrdinalIgnoreCase)
+                              || path.StartsWith("/profiler", StringComparison.OrdinalIgnoreCase)
+                              || path.Equals("/_Host", StringComparison.OrdinalIgnoreCase));
+                    };
                     options.ResultsAuthorize = req => IsProfilerAuthorized(req.HttpContext);
                     options.ResultsListAuthorize = req => IsProfilerAuthorized(req.HttpContext);
                     // Layer C, Part A: persist profiles to SQL Server using the SAME
