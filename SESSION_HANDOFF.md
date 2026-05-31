@@ -21,9 +21,15 @@ captured **1,125** queries; the read-only DetailView shows the N+1 (`SELECT … 
   DetailView with a `ProfileQuery` grid (Sql/DurationMs/ExecuteCount). Cleanup actions + newest-200
   retention. The manual action is removed.
 - Design+plan: `docs/plans/2026-05-31-ambient-ef-profiling-design.md` / `-ambient-ef-profiling.md`.
-- Noted (POC-acceptable; address before WLNCentral port): a load's profile flushes on the NEXT
-  navigation (collection source `Disposed` doesn't fire on nav); retention trim is fire-and-forget
-  on every load.
+- A load's profile is flushed when you navigate to ANY other view (the collection source's
+  `Disposed` doesn't fire on nav, so flush happens at the next view's load-start). **Fixed
+  2026-05-31:** the flush now runs BEFORE the ProfileSummary/ProfileQuery skip, so opening the
+  Profile Summary view itself flushes the operation you just did and it appears immediately.
+  (Earlier bug: the skip-return happened before the flush, so SPA-navigating straight to Profile
+  Summary showed nothing.) The currently-viewed list's own profile still isn't saved until you
+  navigate away — intrinsic to the no-Disposed-on-nav model; acceptable.
+- Noted (POC-acceptable; address before WLNCentral port): retention trim is fire-and-forget on
+  every load.
 
 ## Earlier: original 3-layer POC + ProfileSummary fix
 

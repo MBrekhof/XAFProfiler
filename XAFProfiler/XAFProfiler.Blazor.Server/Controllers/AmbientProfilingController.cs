@@ -121,7 +121,17 @@ namespace XAFProfiler.Blazor.Server.Controllers
             if (collectionSource == null) return;
 
             var objectType = collectionSource.ObjectTypeInfo?.Type;
-            if (objectType == null || _skippedTypes.Contains(objectType)) return;
+            if (objectType == null) return;
+
+            // Opening ANY view is a fresh top-level interaction; by now the PREVIOUS load's SQL has
+            // been fully captured (it ran synchronously before this event). Flush it here — BEFORE
+            // the skip check — so navigating to the ProfileSummary / ProfileQuery views (which we
+            // skip) still saves the pending operation. Otherwise opening the profiler's own view to
+            // inspect results never flushes the last capture and the grid looks empty (the symptom
+            // was: SPA-navigate Customer → Profile Summary, and the Customer load never appears).
+            FlushOpen();
+
+            if (_skippedTypes.Contains(objectType)) return;
 
             var registry = _registry;
             if (registry == null) return;
