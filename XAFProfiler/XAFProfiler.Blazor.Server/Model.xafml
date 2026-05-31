@@ -13,14 +13,25 @@
          raises NonPersistentObjectSpace.ObjectsGetting (grid stays empty). Client mode is
          the only data access mode that fully supports non-persistent objects and raises
          ObjectsGetting. See https://docs.devexpress.com/eXpressAppFramework/113683 and
-         https://docs.devexpress.com/eXpressAppFramework/118449 (Client mode). -->
-    <ListView Id="ProfileSummary_ListView" DataAccessMode="Client" />
+         https://docs.devexpress.com/eXpressAppFramework/118449 (Client mode).
+         AllowEdit/AllowNew/AllowDelete=False: these are read-only projections of captured
+         profiling data; New/Edit/Delete actions serve no purpose and should not appear.
+         (IModelView.AllowEdit, AllowNew, AllowDelete — all inherited from IModelView.) -->
+    <ListView Id="ProfileSummary_ListView" DataAccessMode="Client"
+              AllowEdit="False" AllowNew="False" AllowDelete="False" />
     <!-- The nested Queries grid on the ProfileSummary DetailView is also a non-persistent
          collection. Like the root list view, it runs in Client data access mode (the only mode
          that fully supports non-persistent objects). XAF generates this nested collection view
          with the id ProfileSummary_Queries_ListView; the mode is set explicitly here for clarity.
          (The grid is fed from the in-memory ProfileSummary.Queries collection, which
-         ProfileSummaryDetailController populates on the shown object.) -->
-    <ListView Id="ProfileSummary_Queries_ListView" DataAccessMode="Client" />
+         ProfileSummaryDetailController populates on the shown object.)
+         Read-only: same rationale as ProfileSummary_ListView. -->
+    <ListView Id="ProfileSummary_Queries_ListView" DataAccessMode="Client"
+              AllowEdit="False" AllowNew="False" AllowDelete="False" />
+    <!-- ProfileSummary DetailView: AllowEdit=False makes all property editors read-only
+         (renders the detail as an inspector, not an edit form). No New/Delete actions
+         are meaningful on a non-persistent read-only projection. -->
+    <DetailView Id="ProfileSummary_DetailView"
+                AllowEdit="False" AllowNew="False" AllowDelete="False" />
   </Views>
 </Application>

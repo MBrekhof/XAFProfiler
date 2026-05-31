@@ -3,6 +3,7 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using StackExchange.Profiling;
 
@@ -34,13 +35,19 @@ namespace XAFProfiler.Blazor.Server.Services
         /// <summary>The MiniProfiler custom-timing category for EF Core / ADO SQL statements.</summary>
         private const string SqlTimingKey = "sql";
 
+        private const int RetentionLimit = 200;
+
         private readonly ILogger<OperationCaptureRegistry>? _logger;
+        private readonly string? _connectionString;
         private readonly object _gate = new();
         private readonly ConditionalWeakTable<DbContext, OperationCapture> _active = new();
 
-        public OperationCaptureRegistry(ILogger<OperationCaptureRegistry>? logger = null)
+        public OperationCaptureRegistry(
+            ILogger<OperationCaptureRegistry>? logger = null,
+            IConfiguration? configuration = null)
         {
             _logger = logger;
+            _connectionString = configuration?.GetConnectionString("ConnectionString");
         }
 
         /// <summary>
@@ -156,6 +163,28 @@ namespace XAFProfiler.Blazor.Server.Services
 
                 // MANDATORY Task.Run offload — see remarks above.
                 Task.Run(() => capture.Profiler.StopAsync(discardResults: false)).GetAwaiter().GetResult();
+
+                // Best-effort retention: trim storage to the newest RetentionLimit profiles
+                // so the table doesn't grow unboundedly. Runs on a background thread so the
+                // circuit is not blocked by the extra SQL round-trip. Never throws into the
+                // user's path; any failure is logged only.
+                if (_connectionString != null)
+                {
+                    var connStr = _connectionString;
+                    var logger = _logger;
+                    Task.Run(() =>
+                    {
+                        try
+                        {
+                            ProfileStore.TrimToNewest(connStr, RetentionLimit, logger);
+                        }
+                        catch (Exception trimEx)
+                        {
+                            logger?.LogWarning(trimEx,
+                                "OperationCaptureRegistry: post-save retention trim failed (best-effort).");
+                        }
+                    });
+                }
             }
             catch (Exception ex)
             {

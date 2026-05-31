@@ -39,14 +39,15 @@ namespace XAFProfiler.Blazor.Server
                     options.PopupShowTimeWithChildren = true;
                     options.TrackConnectionOpenClose = true;
                     options.ColorScheme = StackExchange.Profiling.ColorScheme.Auto;
-                    options.ShouldProfile = request =>
-                    {
-                        var path = request.Path.Value ?? string.Empty;
-                        return !(path.StartsWith("/_blazor", StringComparison.OrdinalIgnoreCase)
-                              || path.StartsWith("/_framework", StringComparison.OrdinalIgnoreCase)
-                              || path.StartsWith("/profiler", StringComparison.OrdinalIgnoreCase)
-                              || path.Equals("/_Host", StringComparison.OrdinalIgnoreCase));
-                    };
+                    // Disable HTTP-request auto-profiling entirely. All profiling is now
+                    // done by the ambient EF Core interceptor (OperationCaptureRegistry +
+                    // QueryCaptureInterceptor), which is independent of MiniProfiler.Current
+                    // and of the HTTP middleware. The middleware is still registered (it serves
+                    // the /profiler/* result-viewer endpoints) but ShouldProfile=false prevents
+                    // it from creating any profiler row for HTTP requests — including the Blazor
+                    // SPA host-page render ("GET /", "GET /_Host", etc.) that previously
+                    // persisted zero-query noise rows.
+                    options.ShouldProfile = _ => false;
                     options.ResultsAuthorize = req => IsProfilerAuthorized(req.HttpContext);
                     options.ResultsListAuthorize = req => IsProfilerAuthorized(req.HttpContext);
                     // Layer C, Part A: persist profiles to SQL Server using the SAME
