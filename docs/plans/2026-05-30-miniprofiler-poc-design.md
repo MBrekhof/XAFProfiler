@@ -144,10 +144,10 @@ All three layers proven at runtime against the running app + SQL Server localdb:
   (ground truth).
 - **Layer C:** `SqlServerStorage` (`MiniProfiler.Providers.SqlServer` 4.3.8) persists
   profiles; the circuit profile above survived an app shutdown (row count held with the
-  app stopped). The custom `ProfileSummary` XAF view is **confirmed populated** — 8 rows
-  (Name / Id / Started / Duration Ms / Results Url) read from storage
-  (`05-profile-summary-view.png`); see finding #3 for the bug that initially made it empty.
-  The built-in `/profiler/results?id=` page returns "hidden" in-browser — see finding #2.
+  app stopped). The custom `ProfileSummary` XAF view is **code-complete but renders EMPTY**
+  ("No data to display" when run in VS) — `ObjectsGetting` never fires on the non-persistent
+  ListView; see finding #3. The built-in `/profiler/results?id=` page returns "hidden"
+  in-browser — see finding #2.
 
 ## Findings (carry these to the WLNCentral port-back)
 
@@ -166,14 +166,16 @@ All three layers proven at runtime against the running app + SQL Server localdb:
    entirely (reads storage directly) — a concrete reason to prefer the custom view in
    WLNCentral. To make the built-in UI work, the authorize delegates need to recognise XAF's
    authenticated principal.
-3. **Non-persistent view object must be a plain POCO (ProfileSummary "no data" bug).** The
-   custom browse view initially showed an empty grid. Root cause (found via instrumentation +
-   DX docs eXpressAppFramework/113711): `ProfileSummary` derived from the EF Core persistent
-   `BaseObject`, so XAF built a *persistent* collection source that queried EF Core (0 rows)
-   and never raised `NonPersistentObjectSpace.ObjectsGetting`. Fix: make it a plain POCO with
-   `[Key] [Browsable(false)] Guid Id` (no persistent base), and create rows via
-   `npos.CreateObject<ProfileSummary>()` (not `new`). After the fix, `ObjectsGetting` fires and
-   the grid shows all 8 profiles. Carry this to WLNCentral for any non-persistent browse view.
+3. **ProfileSummary "no data" bug — UNRESOLVED.** The custom browse view renders an empty grid
+   ("No data to display" when run in VS). Instrumentation established: the ListView IS served by
+   a `NonPersistentObjectSpace` and the controller's handler IS subscribed, yet
+   `NonPersistentObjectSpace.ObjectsGetting` **never fires** → 0 rows. (An earlier theory that it
+   derived from the persistent `BaseObject` was WRONG — it was already non-persistent.) The
+   code is now a plain POCO with `[Key]` creating rows via `npos.CreateObject<T>()` — correct
+   practice per DX 113711 and applied, but NOT the cause. **Likely real cause, per DX docs
+   (UNVERIFIED):** XAF **Blazor** non-persistent ListViews need **DataAccessMode = Client**; the
+   default mode doesn't raise `ObjectsGetting`. Candidate fix: set `ProfileSummary_ListView`
+   `DataAccessMode=Client` in Model.xafml, then run and confirm rows appear. Not applied/tested.
 3. **Popup injection** needed a manual `<mini-profiler />` tag helper (the XAF host does
    not auto-inject it) — exactly the risk the WLNCentral design flagged.
 
@@ -181,9 +183,8 @@ All three layers proven at runtime against the running app + SQL Server localdb:
 
 - Negative path (flag off → no popup, endpoints 404/401) not yet exercised.
 - Only light theme verified via Playwright.
-- The custom `ProfileSummary` XAF browse view was not visually re-confirmed populated in the
-  final pass (the nav click flaked); it reads the same storage that holds the verified
-  profile, so the data path is exercised, but a clean screenshot is still owed.
+- The custom `ProfileSummary` XAF browse view renders EMPTY (finding #3) — `ObjectsGetting`
+  never fires; candidate fix `DataAccessMode=Client` is untested.
 - The built-in `/profiler/results?id=<real id>` page returns **"hidden"** in-browser (the
   `ResultsAuthorize` delegate, finding #2) — not a data problem; the profile is loadable.
   Resolve by teaching `ResultsAuthorize` to accept XAF's authenticated user, or rely on the
