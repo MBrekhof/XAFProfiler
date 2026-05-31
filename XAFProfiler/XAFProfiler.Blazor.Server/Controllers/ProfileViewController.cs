@@ -73,8 +73,15 @@ namespace XAFProfiler.Blazor.Server.Controllers
                 }
             }
 
-            // Execute is synchronous; stop+save by blocking on the async API.
-            svc.StopAndSaveAsync().GetAwaiter().GetResult();
+            // XAF's SimpleAction.Execute is synchronous, but stopping the profiler persists
+            // to SQL asynchronously. We are on the Blazor circuit's single-threaded
+            // RendererSynchronizationContext; calling StopAndSaveAsync().GetAwaiter().GetResult()
+            // directly DEADLOCKS — StopAsync's continuation is posted back to this same context,
+            // which the blocking GetResult() is occupying. Offloading to a thread-pool thread via
+            // Task.Run runs the whole async chain with no ambient SynchronizationContext, so its
+            // continuations never need the dispatcher thread. We still block (the action is
+            // inherently synchronous), but on a non-circular wait, so it completes.
+            Task.Run(() => svc.StopAndSaveAsync()).GetAwaiter().GetResult();
 
             Application.ShowViewStrategy.ShowMessage(
                 $"Profiled. View results at /profiler/results?id={mp.Id}",

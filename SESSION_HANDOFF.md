@@ -69,16 +69,22 @@ Files: `Model.xafml`, `BusinessObjects/ProfileSummary.cs`, `Controllers/ProfileS
 
 ## Code-review items to fix before the WLNCentral port-back
 
-- `ProfileViewController` stops the profiler sync-over-async (`.GetAwaiter().GetResult()`).
+- ~~`ProfileViewController` stops the profiler sync-over-async (`.GetAwaiter().GetResult()`).~~
+  **FIXED 2026-05-31** — it was a real deadlock, not just a smell: on the Blazor circuit's
+  `RendererSynchronizationContext`, `StopAsync`'s continuation posts back to the dispatcher
+  thread that `.GetResult()` is blocking → "Profile This View" hung forever on the loading
+  overlay. Fix: `Task.Run(() => svc.StopAndSaveAsync()).GetAwaiter().GetResult()` runs the async
+  chain with no ambient sync context. Verified: action completes, new profile persisted to SQL.
 - `Startup` passes the connection string to `SqlServerStorage`/`EnsureTables` without a null guard.
 - Diagnostics use `Console.WriteLine` instead of `ILogger`.
 
 ## Next steps (suggested order)
 
 1. ~~Fix Open Bug #1 (ProfileSummary empty grid).~~ **DONE 2026-05-31** — see "ProfileSummary fix".
-2. The code-review items above (sync-over-async stop, null connection-string guard, ILogger).
-3. Port the proven circuit-capture + `SqlServerStorage` + DB-bootstrap pattern + the three-part
-   non-persistent-ListView fix back to the WLNCentral `Profile` branch. Carry the findings above.
+2. ~~Fix the sync-over-async profiler-stop deadlock.~~ **DONE 2026-05-31** (Task.Run offload).
+3. Remaining code-review items (null connection-string guard, ILogger).
+4. Port the proven circuit-capture + `SqlServerStorage` + DB-bootstrap pattern + the three-part
+   non-persistent-ListView fix + the Task.Run stop back to the WLNCentral `Profile` branch.
 
 ## Key files
 

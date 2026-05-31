@@ -282,8 +282,12 @@ public sealed class ProfileViewController : ViewController
                     grand += c.OrdersTotal;       // walking this forces per-row lazy load → N+1
         }
 
-        // Execute is synchronous — block on the async stop (no async void; see notes).
-        svc.StopAndSaveAsync().GetAwaiter().GetResult();
+        // Execute is synchronous. Do NOT call svc.StopAndSaveAsync().GetAwaiter().GetResult()
+        // directly: you are on the Blazor circuit's single-threaded RendererSynchronizationContext,
+        // and StopAsync's continuation would post back to the very thread you are blocking → a
+        // permanent deadlock (the action hangs on the loading overlay). Offload to the thread pool
+        // (no ambient sync context) so the async chain's continuations never need the dispatcher:
+        Task.Run(() => svc.StopAndSaveAsync()).GetAwaiter().GetResult();
 
         Application.ShowViewStrategy.ShowMessage(
             $"Profiled. View results at /profiler/results?id={mp.Id}", InformationType.Success);
@@ -476,6 +480,7 @@ clicks can silently no-op.
 | `/profiler/results-index` returns 200 with flag off | No `/profiler` route → SPA catch-all serves the shell | Expected; not a 404 |
 | Built-in `/profiler/results?id=` shows "hidden" | `ResultsAuthorize` doesn't see the XAF auth cookie on a raw fetch | Use the in-app Profile Summary view, or adjust the authorize delegate |
 | `MiniProfiler.Current` null in a button click | Circuit events have no `HttpContext` | Use the scoped `CircuitProfilerService` + manual `StartNew/Step/StopAsync` |
+| "Profile This View" hangs forever on the loading overlay | `StopAndSaveAsync().GetAwaiter().GetResult()` deadlocks on the circuit's `RendererSynchronizationContext` (continuation posts back to the blocked dispatcher thread) | `Task.Run(() => svc.StopAndSaveAsync()).GetAwaiter().GetResult()` — runs the async chain with no ambient sync context |
 | `SqlServerStorage` "Invalid object name 'MiniProfilers'" | Tables/DB not created (XAF creates its DB lazily) | `ProfilerStorageInitializer.EnsureTables` at startup |
 
 ---
