@@ -1,14 +1,14 @@
 #nullable enable
+using System.Collections.Generic;
 using System.ComponentModel;
 using DevExpress.ExpressApp.DC;
 using DevExpress.Persistent.Base;
 
 namespace XAFProfiler.Blazor.Server.BusinessObjects
 {
-    // Non-persistent (in-memory) view object that surfaces stored MiniProfiler
-    // profiles in a read-only XAF ListView. Rows are populated from the configured
-    // MiniProfiler storage by ProfileSummaryController via NonPersistentObjectSpace's
-    // ObjectsGetting / ObjectByKeyGetting events.
+    // Non-persistent (in-memory) view object that surfaces captured EF Core profiling
+    // data in a read-only XAF ListView. Rows are populated by ProfileSummaryController
+    // via NonPersistentObjectSpace's ObjectsGetting / ObjectByKeyGetting events.
     //
     // IMPORTANT: this must NOT derive from a persistent base class (e.g. the EF Core
     // BaseObject). A persistent base makes XAF route the ListView to an
@@ -24,15 +24,19 @@ namespace XAFProfiler.Blazor.Server.BusinessObjects
     // See https://docs.devexpress.com/eXpressAppFramework/116516 (Key Property section).
     [DomainComponent]
     [DefaultClassOptions]
-    [DefaultProperty(nameof(Name))]
+    [DefaultProperty(nameof(Operation))]
     public class ProfileSummary
     {
         [Browsable(false)]
         [DevExpress.ExpressApp.Data.Key]
         public Guid Id { get; set; }
-        public string? Name { get; set; }
+        public string? Operation { get; set; }        // the profiler Name, e.g. "Customer · ListView load"
         public DateTime Started { get; set; }
         public double DurationMs { get; set; }
-        public string? ResultsUrl { get; set; }
+        public int QueryCount { get; set; }
+        public double SlowestQueryMs { get; set; }
+
+        [VisibleInListView(false)]
+        public IList<ProfileQuery> Queries { get; set; } = new List<ProfileQuery>();
     }
 }

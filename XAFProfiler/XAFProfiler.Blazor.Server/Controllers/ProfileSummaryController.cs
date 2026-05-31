@@ -80,10 +80,9 @@ namespace XAFProfiler.Blazor.Server.Controllers
         {
             var s = npos.CreateObject<ProfileSummary>();
             s.Id = profiler.Id;
-            s.Name = profiler.Name;
+            s.Operation = profiler.Name;
             s.Started = profiler.Started;
             s.DurationMs = (double)profiler.DurationMilliseconds;
-            s.ResultsUrl = $"/profiler/results?id={profiler.Id}";
             return s;
         }
 
