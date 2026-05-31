@@ -76,7 +76,7 @@ namespace XAFProfiler.Blazor.Server.Controllers
                     summary.Queries = ProfileProjection.BuildQueries(npos, profiler);
                 }
             }
-            catch (System.Exception ex)
+            catch (Exception ex)
             {
                 _logger?.LogError(ex, "Failed to populate Queries for ProfileSummary {ProfilerId} on the detail view.", summary.Id);
             }

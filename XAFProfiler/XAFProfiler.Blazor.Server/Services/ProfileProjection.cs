@@ -54,7 +54,8 @@ namespace XAFProfiler.Blazor.Server.Services
         {
             var summary = BuildSummary(npos, profiler);
             summary.Queries = BuildQueries(npos, profiler);
-            MarkExisting(npos, summary);
+            // summary was already marked existing by BuildSummary; assigning Queries (a plain
+            // POCO property set) does not re-register it as modified, so no second call needed.
             return summary;
         }
 
