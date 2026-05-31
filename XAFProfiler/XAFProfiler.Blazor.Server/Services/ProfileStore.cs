@@ -91,7 +91,13 @@ namespace XAFProfiler.Blazor.Server.Services
         /// </summary>
         public static void TrimToNewest(string connectionString, int keep, ILogger? logger = null)
         {
-            if (keep < 0) throw new ArgumentOutOfRangeException(nameof(keep));
+            // Guard keep <= 0: TOP(0) would delete EVERY row. Retention should never wipe the
+            // whole store, so treat a non-positive keep as a no-op (use ClearAll to wipe).
+            if (keep <= 0)
+            {
+                logger?.LogWarning("ProfileStore.TrimToNewest called with keep={Keep}; skipping (would delete all profiles).", keep);
+                return;
+            }
             try
             {
                 using var connection = new SqlConnection(connectionString);

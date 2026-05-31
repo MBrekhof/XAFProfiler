@@ -31,7 +31,6 @@
     <!-- ProfileSummary DetailView: AllowEdit=False makes all property editors read-only
          (renders the detail as an inspector, not an edit form). No New/Delete actions
          are meaningful on a non-persistent read-only projection. -->
-    <DetailView Id="ProfileSummary_DetailView"
-                AllowEdit="False" AllowNew="False" AllowDelete="False" />
+    <DetailView Id="ProfileSummary_DetailView" AllowEdit="False" />
   </Views>
 </Application>
