@@ -48,10 +48,14 @@ end-to-end against a running app + SQL Server localdb.
 - [x] Layer C profile persisted to SQL, survives app shutdown (count holds with app stopped)
 - [x] Playwright smoke (light theme) — login/home/ListView screenshots `01`–`04` at repo root
 - [ ] Built-in `/profiler/results` page rendering — returns "hidden" in-browser (authorize delegate)
-- [ ] Negative: flag off → no popup, endpoints 404/401 (NOT yet run — see handoff)
+- [x] Negative: flag off → **no mini-profiler script** on the page (verified, 0 occurrences).
+      Note: `/profiler/results-index` returns **200, not 404** — with the middleware gone there
+      is no `/profiler` route, so XAF's `MapFallbackToPage("/_Host")` SPA catch-all serves the
+      app shell. No profiler data is served, but it isn't a clean 404. (Flag restored to true.)
 - [ ] Dark-theme variant (only light theme verified)
-- [ ] Custom Profile Summary XAF view: not yet visually confirmed populated (nav click flaked
-      in the Playwright run; the data path is the same storage the verified profile lives in)
+- [x] Custom Profile Summary XAF view CONFIRMED populated — grid shows Name / Started /
+      Duration Ms / Results Url with "Profile: Customer ListView" (3946.6 ms) rows reading
+      from `SqlServerStorage`. Screenshot `05-profile-summary-view.png`. (8 circuit profiles in SQL.)
 
 ## Known findings (document for the port-back)
 - **Startup DB ordering:** `EnsureTables` must create the app DB itself (XAF creates it
