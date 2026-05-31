@@ -4,9 +4,9 @@
 
 ## Where things stand
 
-**MiniProfiler POC — core proven, some UI surfaces unconfirmed.** The hard parts WLNCentral
-deferred (circuit profiling + persistent storage) are verified at the data layer (SQL store =
-ground truth). Build clean (`dotnet build XAFProfiler.slnx` → 0/0). App stopped, ports free,
+**MiniProfiler POC complete.** The hard parts WLNCentral deferred (circuit profiling +
+persistent storage) are verified, and the custom ProfileSummary XAF view is now confirmed
+populated. Build clean (`dotnet build XAFProfiler.slnx` → 0/0). App stopped, ports free,
 `Profiling:Enabled` restored to true.
 
 ## What was built (DX XAF 25.2.5, .NET 8)
@@ -30,31 +30,34 @@ ground truth). Build clean (`dotnet build XAFProfiler.slnx` → 0/0). App stoppe
 - **Negative test:** flag off → no mini-profiler script (0 occurrences). Nuance:
   `/profiler/results-index` returns **200 not 404** (no `/profiler` route → XAF SPA catch-all
   serves the shell; no profiler data served). Flag restored to true.
-- Honest screenshots `01`–`04` at repo root (login, home, Customer ListView w/ N+1 column, ribbon).
+- **ProfileSummary XAF view CONFIRMED populated** — grid shows 8 rows (Name / Id / Started /
+  Duration Ms / Results Url) read from `SqlServerStorage` — `05-profile-summary-view.png`.
+  Verified by instrumentation: `ObjectsGetting FIRED` → "loaded 8 profiles" → grid 8 rows.
+- Honest screenshots `01`–`05` at repo root (login, home, Customer ListView w/ N+1 column,
+  ribbon, populated ProfileSummary grid).
 
 ## NOT yet confirmed (be honest in the port-back)
 
-1. **`ProfileSummary` XAF view RENDER** — across ~3 Playwright attempts the nav click never swapped
-   the content pane in a captured screenshot (kept showing the Customer ListView). Code path is
-   exercised (reads the same storage as the verified profiles) but the populated grid has NOT been
-   seen. A real screenshot is owed — likely needs a more robust wait for the XAF view swap.
-2. **Built-in `/profiler/results?id=<real id>`** returns **"hidden"** in-browser — `ResultsAuthorize`
+1. **Built-in `/profiler/results?id=<real id>`** returns **"hidden"** in-browser — `ResultsAuthorize`
    returns false (XAF auth cookie not seen as authenticated on the raw fetch). A bogus id returns
-   "not found", so the profile IS loadable; purely the delegate withholding it.
-3. Dark-theme variant (only light theme exercised).
+   "not found", so the profile IS loadable; purely the delegate withholding it. The custom XAF
+   view (confirmed working) is the reliable in-app surface, so this is low priority.
+2. Dark-theme variant (only light theme exercised).
 
 ## Findings (for the port-back)
 
-1. **DB-ordering:** table init must create the app DB itself (XAF creates it lazily after host
+1. **Non-persistent view object must be a plain POCO** with `[Key]`, NOT derived from the EF Core
+   `BaseObject` — otherwise XAF builds a persistent collection source (queries EF → empty) and
+   `ObjectsGetting` never fires. Create rows via `npos.CreateObject<T>()`, not `new`
+   (DX docs eXpressAppFramework/113711). This was the ProfileSummary "no data" bug; now fixed.
+2. **DB-ordering:** table init must create the app DB itself (XAF creates it lazily after host
    start). Fixed via a `master` connection in `ProfilerStorageInitializer`.
-2. **Built-in MiniProfiler UI blocked under XAF auth** (caveat #2 above) — once the custom XAF
-   view's render is confirmed, it's the reliable in-app surface.
-3. **Popup injection** needed a manual `<mini-profiler />` tag helper (XAF doesn't auto-inject).
+3. **Built-in MiniProfiler UI blocked under XAF auth** (item #1 above) — custom XAF view sidesteps it.
+4. **Popup injection** needed a manual `<mini-profiler />` tag helper (XAF doesn't auto-inject).
 
 ## Next steps
 
-- Capture the `ProfileSummary` view render (robust wait); confirm/fix the built-in UI auth.
-- Dark-theme Playwright variant.
+- (Optional) fix the built-in `/profiler/results` auth delegate; dark-theme variant.
 - Fix-before-port-back (code review): sync-over-async stop, null connection-string guard, ILogger.
 - `finishing-a-development-branch`: a few early commits were duplicated/amended during
   parallel-agent races (`19eaa3a`/`3ba3959`, `99dfc76`/`85393cc`) — consider squashing first.
@@ -63,4 +66,4 @@ ground truth). Build clean (`dotnet build XAFProfiler.slnx` → 0/0). App stoppe
 ## Git
 
 Local repo (no remote). Branch `master`. `run.log` / `build.log` / `.playwright-mcp/` gitignored.
-Tracked screenshots: `01`–`04`.
+Tracked screenshots: `01`–`05`.

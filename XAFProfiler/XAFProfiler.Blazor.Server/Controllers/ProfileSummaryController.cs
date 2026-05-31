@@ -8,12 +8,13 @@ using XAFProfiler.Blazor.Server.BusinessObjects;
 namespace XAFProfiler.Blazor.Server.Controllers
 {
     /// <summary>
-    /// Populates the read-only <see cref="ProfileSummary"/> ListView from the
-    /// configured MiniProfiler storage. ProfileSummary is a non-persistent
-    /// [DomainComponent], so XAF raises ObjectsGetting / ObjectByKeyGetting on the
-    /// NonPersistentObjectSpace and we supply the rows here. Subscribing in
-    /// OnActivated and unsubscribing in OnDeactivated avoids the duplicated/leaked
-    /// handlers that cause XAF error 1021.
+    /// Populates the read-only <see cref="ProfileSummary"/> ListView from the configured
+    /// MiniProfiler storage. <see cref="ProfileSummary"/> is a non-persistent
+    /// [DomainComponent] POCO (it must NOT derive from a persistent base, or XAF builds a
+    /// persistent collection source that queries EF and never raises ObjectsGetting — see
+    /// https://docs.devexpress.com/eXpressAppFramework/113711). XAF therefore serves it via
+    /// a NonPersistentObjectSpace and raises ObjectsGetting / ObjectByKeyGetting, which we
+    /// handle here. Subscribe in OnActivated, unsubscribe in OnDeactivated (error 1021 safety).
     /// </summary>
     public sealed class ProfileSummaryController : ViewController
     {
@@ -45,18 +46,23 @@ namespace XAFProfiler.Blazor.Server.Controllers
         // The storage configured in Startup's AddMiniProfiler (SqlServerStorage).
         private static IAsyncStorage? GetStorage() => MiniProfiler.DefaultOptions?.Storage;
 
-        private static ProfileSummary ToSummary(MiniProfiler profiler) => new ProfileSummary
+        // Non-persistent objects must be created THROUGH the object space
+        // (npos.CreateObject<T>()), not via `new`, so XAF tracks/binds them correctly.
+        private static ProfileSummary ToSummary(NonPersistentObjectSpace npos, MiniProfiler profiler)
         {
-            Id = profiler.Id,
-            Name = profiler.Name,
-            Started = profiler.Started,
-            DurationMs = (double)profiler.DurationMilliseconds,
-            ResultsUrl = $"/profiler/results?id={profiler.Id}"
-        };
+            var s = npos.CreateObject<ProfileSummary>();
+            s.Id = profiler.Id;
+            s.Name = profiler.Name;
+            s.Started = profiler.Started;
+            s.DurationMs = (double)profiler.DurationMilliseconds;
+            s.ResultsUrl = $"/profiler/results?id={profiler.Id}";
+            return s;
+        }
 
         private void ObjectSpace_ObjectsGetting(object? sender, ObjectsGettingEventArgs e)
         {
-            var list = new BindingList<ProfileSummary>();
+            var npos = (NonPersistentObjectSpace)ObjectSpace;
+            var list = new BindingList<ProfileSummary> { AllowNew = false, AllowRemove = false };
             var storage = GetStorage();
             if (storage != null)
             {
@@ -67,7 +73,7 @@ namespace XAFProfiler.Blazor.Server.Controllers
                         var profiler = storage.Load(id);
                         if (profiler != null)
                         {
-                            list.Add(ToSummary(profiler));
+                            list.Add(ToSummary(npos, profiler));
                         }
                     }
                 }
@@ -86,7 +92,7 @@ namespace XAFProfiler.Blazor.Server.Controllers
                 var profiler = GetStorage()?.Load(id);
                 if (profiler != null)
                 {
-                    e.Object = ToSummary(profiler);
+                    e.Object = ToSummary((NonPersistentObjectSpace)ObjectSpace, profiler);
                 }
             }
         }

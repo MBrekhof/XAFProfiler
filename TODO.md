@@ -3,8 +3,9 @@
 Tracking the MiniProfiler POC. Design:
 `docs/plans/2026-05-30-miniprofiler-poc-design.md`.
 
-**Status: core POC proven (2026-05-31).** Circuit capture + storage verified at the data
-layer (SQL store = ground truth). Some in-browser UI surfaces remain unconfirmed (below).
+**Status: POC complete (2026-05-31).** All three layers verified, including the custom
+ProfileSummary XAF view (now confirmed populated). One minor item open (built-in
+`/profiler/results` auth) + dark-theme variant.
 
 ## Demo domain
 - [x] `Customer` / `Order` / `OrderLine` XAF EF Core entities (`BusinessObjects/Demo/`)
@@ -35,12 +36,15 @@ layer (SQL store = ground truth). Some in-browser UI surfaces remain unconfirmed
 - [x] Configure `SqlServerStorage` (`MiniProfiler.Providers.SqlServer` 4.3.8)
 - [x] Profiler tables bootstrapped by `ProfilerStorageInitializer` (creates DB if absent, then tables)
 - [x] Profiles persist in SQL across app shutdown (count holds with app stopped)
-- [x] Custom read-only XAF view (`ProfileSummary` + `ProfileSummaryController`) — CODE complete,
-      reads from the same `SqlServerStorage` that holds the verified profiles.
-- [ ] **`ProfileSummary` view RENDER not visually confirmed.** Across ~3 Playwright attempts the
-      nav click never swapped the content pane in a captured screenshot (it kept showing the
-      Customer ListView). Code path is exercised (same storage), but the populated grid has NOT
-      been seen. Owe a real screenshot — likely needs a more robust wait for the XAF view swap.
+- [x] Custom read-only XAF view (`ProfileSummary` + `ProfileSummaryController`) — CONFIRMED
+      populated: grid shows 8 rows (Name / Id / Started / Duration Ms / Results Url) reading
+      from `SqlServerStorage`. Screenshot `05-profile-summary-view.png`.
+      **Root-cause fix:** `ProfileSummary` originally derived from the EF Core persistent
+      `BaseObject`, which made XAF build a *persistent* collection source (queried EF → 0 rows)
+      so `ObjectsGetting` never fired. Per DX docs (eXpressAppFramework/113711) a non-persistent
+      `[DomainComponent]` must be a plain POCO with `[Key]`; rows must be created via
+      `npos.CreateObject<T>()`, not `new`. Verified by instrumentation: ObjectsGetting fired →
+      "loaded 8 profiles" → grid shows 8 rows.
 
 ## Verification
 - [x] `dotnet build XAFProfiler.slnx` clean (0/0)
@@ -48,23 +52,27 @@ layer (SQL store = ground truth). Some in-browser UI surfaces remain unconfirmed
 - [x] Layer A popup present (console "MiniProfiler Init")
 - [x] Layer B circuit profile with markers + thousands of child SQL timings (verified in SQL)
 - [x] Layer C profile persisted to SQL, survives app shutdown
-- [x] Playwright smoke (light theme) — honest screenshots `01`–`04` at repo root
+- [x] Playwright smoke (light theme) — honest screenshots `01`–`05` at repo root (`05` = populated ProfileSummary grid)
 - [x] Negative: flag off → **no mini-profiler script** on the page (0 occurrences). Nuance:
       `/profiler/results-index` returns **200, not 404** — with the middleware gone there's no
       `/profiler` route, so XAF's `MapFallbackToPage("/_Host")` SPA catch-all serves the app
       shell (no profiler data served). Flag restored to true.
 - [ ] Built-in `/profiler/results?id=<real id>` renders in-browser — currently returns **"hidden"**
       (the `ResultsAuthorize` delegate; a bogus id returns "not found", so the profile IS loadable).
-- [ ] `ProfileSummary` XAF view render (see Layer C above)
+- [x] `ProfileSummary` XAF view render (confirmed — see Layer C above)
 - [ ] Dark-theme variant (only light theme verified)
 
 ## Known findings (document for the port-back)
+- **Non-persistent view object must be a plain POCO.** A `[DomainComponent]` that derives from
+  the EF Core persistent `BaseObject` makes XAF build a persistent collection source (queries
+  EF → empty) and `ObjectsGetting` never fires. Use a POCO with `[Key]` + `npos.CreateObject<T>()`
+  (DX docs eXpressAppFramework/113711). This bit the ProfileSummary view; now fixed.
 - **Startup DB ordering:** `EnsureTables` must create the app DB itself (XAF creates it lazily,
   after host start). Fixed in `ProfilerStorageInitializer` via a `master` connection.
 - **Built-in MiniProfiler UI blocked under XAF auth:** `/profiler/results-index` "Unauthorized",
   `/profiler/results?id=` "hidden" — `ResultsAuthorize`/`ResultsListAuthorize` don't recognise
-  XAF's auth cookie. The custom XAF view reads storage directly and sidesteps this (once its
-  render is confirmed).
+  XAF's auth cookie. The custom XAF view reads storage directly and sidesteps this — and is now
+  confirmed working, so it's the reliable in-app surface.
 
 ## Follow-up (not this POC)
 - [ ] Capture the `ProfileSummary` view render; decide whether to fix the built-in UI auth

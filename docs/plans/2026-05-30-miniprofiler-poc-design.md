@@ -144,9 +144,10 @@ All three layers proven at runtime against the running app + SQL Server localdb:
   (ground truth).
 - **Layer C:** `SqlServerStorage` (`MiniProfiler.Providers.SqlServer` 4.3.8) persists
   profiles; the circuit profile above survived an app shutdown (row count held with the
-  app stopped). The custom `ProfileSummary` XAF view reads the same storage (its nav item
-  was not visually re-confirmed in the last Playwright pass — see Still open). The built-in
-  `/profiler/results?id=` page returns "hidden" in-browser — see Still open / finding #2.
+  app stopped). The custom `ProfileSummary` XAF view is **confirmed populated** — 8 rows
+  (Name / Id / Started / Duration Ms / Results Url) read from storage
+  (`05-profile-summary-view.png`); see finding #3 for the bug that initially made it empty.
+  The built-in `/profiler/results?id=` page returns "hidden" in-browser — see finding #2.
 
 ## Findings (carry these to the WLNCentral port-back)
 
@@ -165,6 +166,14 @@ All three layers proven at runtime against the running app + SQL Server localdb:
    entirely (reads storage directly) — a concrete reason to prefer the custom view in
    WLNCentral. To make the built-in UI work, the authorize delegates need to recognise XAF's
    authenticated principal.
+3. **Non-persistent view object must be a plain POCO (ProfileSummary "no data" bug).** The
+   custom browse view initially showed an empty grid. Root cause (found via instrumentation +
+   DX docs eXpressAppFramework/113711): `ProfileSummary` derived from the EF Core persistent
+   `BaseObject`, so XAF built a *persistent* collection source that queried EF Core (0 rows)
+   and never raised `NonPersistentObjectSpace.ObjectsGetting`. Fix: make it a plain POCO with
+   `[Key] [Browsable(false)] Guid Id` (no persistent base), and create rows via
+   `npos.CreateObject<ProfileSummary>()` (not `new`). After the fix, `ObjectsGetting` fires and
+   the grid shows all 8 profiles. Carry this to WLNCentral for any non-persistent browse view.
 3. **Popup injection** needed a manual `<mini-profiler />` tag helper (the XAF host does
    not auto-inject it) — exactly the risk the WLNCentral design flagged.
 
