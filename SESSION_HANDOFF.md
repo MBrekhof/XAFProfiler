@@ -3,15 +3,36 @@
 **Last updated:** 2026-05-31
 **Build:** `dotnet build XAFProfiler.slnx` → 0 warnings / 0 errors ·
 **App:** stopped, ports 5000/5001 free · **Flag:** `Profiling:Enabled` = true (dev)
+**Branch:** `feat/ambient-ef-profiling` (ambient EF feature, complete + verified, NOT yet merged to master)
 
-## TL;DR
+## TL;DR (newest first)
+
+**Ambient EF-Core profiling — built & fully verified on branch `feat/ambient-ef-profiling`
+(2026-05-31), not yet merged.** Reframed the manual "Profile This View" button into AUTOMATIC
+capture of every XAF ListView data-load's EF SQL, surfaced in an identifiable, drillable,
+cleanable browse view. Verified end-to-end against the SQL store: `Customer · ListView load`
+captured **1,125** queries; the read-only DetailView shows the N+1 (`SELECT … FROM [OrderLines]`
+**ExecuteCount 1,089**); Clear Profiles empties the store; no `/_blazor`/`_Host` noise; 0 errors.
+- **Capture:** a custom EF `DbCommandInterceptor` records each SQL command onto an explicitly-held
+  `MiniProfiler` (NOT the AsyncLocal `Current`, which is null on the grid's async chain), attributed
+  by **DbContext instance** (`ConditionalWeakTable`). A Main `WindowController` brackets each load
+  (`registry.Begin/End`). See memory `ambient-ef-capture-interceptor`.
+- **Browse:** `ProfileSummary` (Operation/Started/DurationMs/QueryCount/SlowestQueryMs) + read-only
+  DetailView with a `ProfileQuery` grid (Sql/DurationMs/ExecuteCount). Cleanup actions + newest-200
+  retention. The manual action is removed.
+- Design+plan: `docs/plans/2026-05-31-ambient-ef-profiling-design.md` / `-ambient-ef-profiling.md`.
+- Noted (POC-acceptable; address before WLNCentral port): a load's profile flushes on the NEXT
+  navigation (collection source `Disposed` doesn't fire on nav); retention trim is fire-and-forget
+  on every load.
+
+## Earlier: original 3-layer POC + ProfileSummary fix
 
 MiniProfiler-in-XAF-Blazor POC. The two things WLNCentral's design deferred —
 **Blazor SignalR circuit profiling** and **persistent storage** — are built and **proven at
 the data layer (SQL store = ground truth)**. **Open Bug #1 (ProfileSummary browse view
-rendered EMPTY) is now FIXED and verified (2026-05-31)** — the grid shows 100 rows of real
-profile data, one GUID cross-checked against the SQL `MiniProfilers` table. The fix needed
-THREE things together (see "ProfileSummary fix" below).
+rendered EMPTY) was FIXED and verified (2026-05-31)** — needed THREE things together (see
+"ProfileSummary fix" below). NOTE: the ambient feature above SUPERSEDES the manual
+"Profile This View" action described in the older sections.
 
 ## What was built (DX XAF 25.2.5, .NET 8; solution `XAFProfiler.slnx` at repo root)
 

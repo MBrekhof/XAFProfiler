@@ -3,10 +3,17 @@
 Tracking the MiniProfiler POC. Design:
 `docs/plans/2026-05-30-miniprofiler-poc-design.md`.
 
-**Status: core POC proven (2026-05-31).** Circuit capture (Layer B) + SQL storage (Layer C)
+**Status: AMBIENT EF profiling complete on branch `feat/ambient-ef-profiling` (2026-05-31), not
+yet merged.** Automatic capture of every ListView data-load's EF SQL via a `DbCommandInterceptor`
+(keyed by DbContext); identifiable/drillable/cleanable browse view; manual "Profile This View"
+removed. Verified end-to-end (Customer load = 1,125 queries; N+1 OrderLines ExecuteCount 1,089;
+Clear empties store; no transport noise; 0 errors). Design/plan in `docs/plans/2026-05-31-ambient-ef-profiling*.md`;
+details in SESSION_HANDOFF + memory `ambient-ef-capture-interceptor`.
+
+**Earlier: core POC proven (2026-05-31).** Circuit capture (Layer B) + SQL storage (Layer C)
 verified at the data layer (SQL store = ground truth). The custom **ProfileSummary XAF view
-now RENDERS (100 rows), fixed 2026-05-31** (see Layer C). The built-in `/profiler/results` UI
-is still auth-blocked. Dark-theme not exercised.
+now RENDERS, fixed 2026-05-31** (see Layer C). The built-in `/profiler/results` UI is still
+auth-blocked. Dark-theme not exercised. (The ambient feature above supersedes the manual action.)
 
 ## Demo domain
 - [x] `Customer` / `Order` / `OrderLine` XAF EF Core entities (`BusinessObjects/Demo/`)
