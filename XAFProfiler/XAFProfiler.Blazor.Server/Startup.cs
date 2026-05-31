@@ -52,9 +52,6 @@ namespace XAFProfiler.Blazor.Server
                 }).AddEntityFramework();
             }
             services.AddScoped<CircuitHandler, CircuitHandlerProxy>();
-            // Per-circuit profiler owner. Registered unconditionally so the ViewController
-            // can always resolve it; it is inert when MiniProfiler isn't configured.
-            services.AddScoped<CircuitProfilerService>();
             services.AddXaf(Configuration, builder =>
             {
                 builder.UseApplication<XAFProfilerBlazorApplication>();
