@@ -1,0 +1,395 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "mcp-excalidraw-server",
+  "elements": [
+    {
+      "id": "title",
+      "type": "text",
+      "x": 110,
+      "y": 24,
+      "width": 760,
+      "height": 34,
+      "strokeColor": "#1e1e1e",
+      "text": "XAFProfiler — MiniProfiler in XAF Blazor Server",
+      "fontSize": 26,
+      "createdAt": "2026-05-31T06:22:43.015Z",
+      "updatedAt": "2026-05-31T06:22:43.015Z",
+      "version": 1
+    },
+    {
+      "id": "user",
+      "type": "rectangle",
+      "x": 110,
+      "y": 120,
+      "width": 230,
+      "height": 70,
+      "backgroundColor": "#fff3bf",
+      "strokeColor": "#1e1e1e",
+      "label": {
+        "text": "Admin user — clicks\n'Profile This View'"
+      },
+      "fontSize": 15,
+      "createdAt": "2026-05-31T06:22:43.015Z",
+      "updatedAt": "2026-05-31T06:22:43.015Z",
+      "version": 1
+    },
+    {
+      "id": "pvc",
+      "type": "rectangle",
+      "x": 110,
+      "y": 280,
+      "width": 230,
+      "height": 80,
+      "backgroundColor": "#d0ebff",
+      "strokeColor": "#1971c2",
+      "label": {
+        "text": "ProfileViewController\nSimpleAction (circuit)"
+      },
+      "fontSize": 15,
+      "createdAt": "2026-05-31T06:22:43.015Z",
+      "updatedAt": "2026-05-31T06:22:43.015Z",
+      "version": 1
+    },
+    {
+      "id": "cps",
+      "type": "rectangle",
+      "x": 110,
+      "y": 440,
+      "width": 230,
+      "height": 80,
+      "backgroundColor": "#d0ebff",
+      "strokeColor": "#1971c2",
+      "label": {
+        "text": "CircuitProfilerService\nStartNew · Step · StopAsync"
+      },
+      "fontSize": 14,
+      "createdAt": "2026-05-31T06:22:43.015Z",
+      "updatedAt": "2026-05-31T06:22:43.015Z",
+      "version": 1
+    },
+    {
+      "id": "ef",
+      "type": "rectangle",
+      "x": 380,
+      "y": 440,
+      "width": 200,
+      "height": 80,
+      "backgroundColor": "#d0ebff",
+      "strokeColor": "#1971c2",
+      "label": {
+        "text": "EF Core\nN+1 over OrdersTotal"
+      },
+      "fontSize": 15,
+      "createdAt": "2026-05-31T06:22:43.015Z",
+      "updatedAt": "2026-05-31T06:22:43.015Z",
+      "version": 1
+    },
+    {
+      "id": "http",
+      "type": "rectangle",
+      "x": 620,
+      "y": 440,
+      "width": 210,
+      "height": 80,
+      "backgroundColor": "#ffe3c4",
+      "strokeColor": "#e8590c",
+      "label": {
+        "text": "HTTP requests\nAddMiniProfiler + EF"
+      },
+      "fontSize": 15,
+      "createdAt": "2026-05-31T06:22:43.015Z",
+      "updatedAt": "2026-05-31T06:22:43.015Z",
+      "version": 1
+    },
+    {
+      "id": "store",
+      "type": "rectangle",
+      "x": 360,
+      "y": 650,
+      "width": 340,
+      "height": 90,
+      "backgroundColor": "#c3f0c8",
+      "strokeColor": "#2f9e44",
+      "label": {
+        "text": "SqlServerStorage\nMiniProfilers · Timings tables"
+      },
+      "fontSize": 16,
+      "createdAt": "2026-05-31T06:22:43.015Z",
+      "updatedAt": "2026-05-31T06:22:43.015Z",
+      "version": 1
+    },
+    {
+      "id": "psl",
+      "type": "rectangle",
+      "x": 910,
+      "y": 280,
+      "width": 300,
+      "height": 80,
+      "backgroundColor": "#f3d9fa",
+      "strokeColor": "#9c36b5",
+      "label": {
+        "text": "Profile Summary ListView\nnon-persistent · Client mode"
+      },
+      "fontSize": 15,
+      "createdAt": "2026-05-31T06:22:43.015Z",
+      "updatedAt": "2026-05-31T06:22:43.015Z",
+      "version": 1
+    },
+    {
+      "id": "psc",
+      "type": "rectangle",
+      "x": 910,
+      "y": 440,
+      "width": 300,
+      "height": 80,
+      "backgroundColor": "#f3d9fa",
+      "strokeColor": "#9c36b5",
+      "label": {
+        "text": "ProfileSummaryController\nWindowController · ObjectsGetting"
+      },
+      "fontSize": 14,
+      "createdAt": "2026-05-31T06:22:43.016Z",
+      "updatedAt": "2026-05-31T06:22:43.016Z",
+      "version": 1
+    },
+    {
+      "id": "legend",
+      "type": "text",
+      "x": 110,
+      "y": 790,
+      "width": 1000,
+      "height": 24,
+      "strokeColor": "#495057",
+      "text": "Blue = circuit capture (Layer B)    Orange = HTTP + EF (Layer A)    Green = storage (Layer C)    Purple = in-app browse",
+      "fontSize": 15,
+      "createdAt": "2026-05-31T06:22:43.016Z",
+      "updatedAt": "2026-05-31T06:22:43.016Z",
+      "version": 1
+    },
+    {
+      "id": "mpte7qcyfd75oira67e",
+      "type": "arrow",
+      "x": 225,
+      "y": 198,
+      "strokeColor": "#1e1e1e",
+      "label": {
+        "text": "click"
+      },
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          74
+        ]
+      ],
+      "start": {
+        "id": "user"
+      },
+      "end": {
+        "id": "pvc"
+      },
+      "createdAt": "2026-05-31T06:22:43.016Z",
+      "updatedAt": "2026-05-31T06:22:43.016Z",
+      "version": 1
+    },
+    {
+      "id": "mpte7qcynv2lxkbhqr",
+      "type": "arrow",
+      "x": 225,
+      "y": 368,
+      "strokeColor": "#1e1e1e",
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          64
+        ]
+      ],
+      "start": {
+        "id": "pvc"
+      },
+      "end": {
+        "id": "cps"
+      },
+      "createdAt": "2026-05-31T06:22:43.016Z",
+      "updatedAt": "2026-05-31T06:22:43.016Z",
+      "version": 1
+    },
+    {
+      "id": "mpte7qcyfeg3l0cw5t",
+      "type": "arrow",
+      "x": 348,
+      "y": 480,
+      "strokeColor": "#1e1e1e",
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          24,
+          0
+        ]
+      ],
+      "start": {
+        "id": "cps"
+      },
+      "end": {
+        "id": "ef"
+      },
+      "createdAt": "2026-05-31T06:22:43.016Z",
+      "updatedAt": "2026-05-31T06:22:43.016Z",
+      "version": 1
+    },
+    {
+      "id": "mpte7qcydgr8ay1n685",
+      "type": "arrow",
+      "x": 288.28289827677236,
+      "y": 524.609256162315,
+      "strokeColor": "#2f9e44",
+      "label": {
+        "text": "save"
+      },
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          171.34118019064135,
+          120.78148767537004
+        ]
+      ],
+      "start": {
+        "id": "cps"
+      },
+      "end": {
+        "id": "store"
+      },
+      "createdAt": "2026-05-31T06:22:43.016Z",
+      "updatedAt": "2026-05-31T06:22:43.016Z",
+      "version": 1
+    },
+    {
+      "id": "mpte7qcymlylpd9g03d",
+      "type": "arrow",
+      "x": 491.1144335386776,
+      "y": 527.7920642163135,
+      "strokeColor": "#2f9e44",
+      "label": {
+        "text": "SQL"
+      },
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          26.608342224970386,
+          114.41587156737296
+        ]
+      ],
+      "start": {
+        "id": "ef"
+      },
+      "end": {
+        "id": "store"
+      },
+      "createdAt": "2026-05-31T06:22:43.016Z",
+      "updatedAt": "2026-05-31T06:22:43.016Z",
+      "version": 1
+    },
+    {
+      "id": "mpte7qcy2kld4qw2skw",
+      "type": "arrow",
+      "x": 683.3464107246716,
+      "y": 525.9257522779262,
+      "strokeColor": "#e8590c",
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          -107.157937728413,
+          118.14849544414756
+        ]
+      ],
+      "start": {
+        "id": "http"
+      },
+      "end": {
+        "id": "store"
+      },
+      "createdAt": "2026-05-31T06:22:43.016Z",
+      "updatedAt": "2026-05-31T06:22:43.016Z",
+      "version": 1
+    },
+    {
+      "id": "mpte7qcy8r7uvg00hmi",
+      "type": "arrow",
+      "x": 648.3434884047192,
+      "y": 646.9927358358215,
+      "strokeColor": "#9c36b5",
+      "label": {
+        "text": "read"
+      },
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          305.63860458591046,
+          -123.98547167164293
+        ]
+      ],
+      "start": {
+        "id": "store"
+      },
+      "end": {
+        "id": "psc"
+      },
+      "createdAt": "2026-05-31T06:22:43.016Z",
+      "updatedAt": "2026-05-31T06:22:43.016Z",
+      "version": 1
+    },
+    {
+      "id": "mpte7qcyy6dm1wifnlk",
+      "type": "arrow",
+      "x": 1060,
+      "y": 432,
+      "strokeColor": "#9c36b5",
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          -64
+        ]
+      ],
+      "start": {
+        "id": "psc"
+      },
+      "end": {
+        "id": "psl"
+      },
+      "createdAt": "2026-05-31T06:22:43.016Z",
+      "updatedAt": "2026-05-31T06:22:43.016Z",
+      "version": 1
+    }
+  ],
+  "appState": {
+    "viewBackgroundColor": "#ffffff",
+    "gridSize": null
+  }
+}

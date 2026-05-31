@@ -7,4 +7,13 @@
 	 VirtualScrollingEnabled="True">
   </Options>
   <NavigationItems NavigationStyle="Accordion" />
+  <Views>
+    <!-- ProfileSummary is a non-persistent [DomainComponent]. XAF Blazor would otherwise
+         build a Queryable collection source for it, which queries a data store and never
+         raises NonPersistentObjectSpace.ObjectsGetting (grid stays empty). Client mode is
+         the only data access mode that fully supports non-persistent objects and raises
+         ObjectsGetting. See https://docs.devexpress.com/eXpressAppFramework/113683 and
+         https://docs.devexpress.com/eXpressAppFramework/118449 (Client mode). -->
+    <ListView Id="ProfileSummary_ListView" DataAccessMode="Client" />
+  </Views>
 </Application>

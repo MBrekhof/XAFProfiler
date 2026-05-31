@@ -1,16 +1,17 @@
 # Session Handoff
 
 **Last updated:** 2026-05-31
-**HEAD:** `da74b04` · **Build:** `dotnet build XAFProfiler.slnx` → 0 warnings / 0 errors ·
+**Build:** `dotnet build XAFProfiler.slnx` → 0 warnings / 0 errors ·
 **App:** stopped, ports 5000/5001 free · **Flag:** `Profiling:Enabled` = true (dev)
 
 ## TL;DR
 
 MiniProfiler-in-XAF-Blazor POC. The two things WLNCentral's design deferred —
 **Blazor SignalR circuit profiling** and **persistent storage** — are built and **proven at
-the data layer (SQL store = ground truth)**. One piece is still broken: the custom
-**ProfileSummary XAF browse view renders EMPTY**. A doc-backed candidate fix is identified
-but UNVERIFIED (see Open Bugs #1).
+the data layer (SQL store = ground truth)**. **Open Bug #1 (ProfileSummary browse view
+rendered EMPTY) is now FIXED and verified (2026-05-31)** — the grid shows 100 rows of real
+profile data, one GUID cross-checked against the SQL `MiniProfilers` table. The fix needed
+THREE things together (see "ProfileSummary fix" below).
 
 ## What was built (DX XAF 25.2.5, .NET 8; solution `XAFProfiler.slnx` at repo root)
 
@@ -39,22 +40,32 @@ but UNVERIFIED (see Open Bugs #1).
   catch-all serves the shell (no profiler data served). Flag restored to true.
 - Honest screenshots `01`–`04` at repo root (login, home, Customer ListView w/ N+1 column, ribbon).
 
+## ProfileSummary fix (2026-05-31, VERIFIED — grid renders 100 rows vs SQL store)
+
+A Blazor non-persistent `[DomainComponent]` ListView needs **all three** of these, or it
+silently shows "No data to display" (ObjectSpace IS non-persistent, handler subscribed, yet
+`ObjectsGetting` never fires):
+
+1. **`DataAccessMode=Client`** on `ProfileSummary_ListView` (`Model.xafml`). Blazor defaults to
+   **Queryable**, which builds an `IQueryable` against a store and never raises `ObjectsGetting`
+   for a storeless type. (dxdocs 113683 / 118449.)
+2. **`DevExpress.ExpressApp.Data.Key`** on the key property — NOT the EF Core
+   `System.ComponentModel.DataAnnotations.Key` (XAF's non-persistent key detection ignores it;
+   you get error 1037 during `CreateListView`). (dxdocs 116516 "Key Property".)
+3. **Subscribe `ObjectsGetting`/`ObjectByKeyGetting` via `XafApplication.ObjectSpaceCreated`
+   from a `WindowController` (TargetWindowType=Main)** — NOT a per-view ViewController's
+   `OnActivated`. The collection source requests objects during view creation, *before* per-view
+   controllers activate, so OnActivated subscribes too late. (xaf-blazor-startup skill.)
+
+Files: `Model.xafml`, `BusinessObjects/ProfileSummary.cs`, `Controllers/ProfileSummaryController.cs`.
+
 ## OPEN BUGS / NOT confirmed
 
-1. **ProfileSummary XAF view renders EMPTY** ("No data to display" when run in VS).
-   Instrumentation (now reverted) proved: it IS a `NonPersistentObjectSpace`, the handler IS
-   subscribed, but `ObjectsGetting` **never fires** → 0 rows. So the earlier "derived from
-   BaseObject" theory was WRONG (it was already non-persistent); the POCO + `CreateObject<T>()`
-   change in commit `87a6e76` is correct practice (DX 113711) but did NOT fix it.
-   **Candidate fix, per DX docs, UNVERIFIED:** XAF Blazor non-persistent ListViews need
-   **`DataAccessMode = Client`** (default mode doesn't raise `ObjectsGetting`). Set it on the
-   `ProfileSummary_ListView` node in `Model.xafml`, run, and confirm rows appear BEFORE claiming
-   success. Use the **dxdocs MCP** for specifics.
-2. **Built-in `/profiler/results?id=<real id>`** returns "hidden" in-browser — `ResultsAuthorize`
+1. **Built-in `/profiler/results?id=<real id>`** returns "hidden" in-browser — `ResultsAuthorize`
    returns false (XAF auth cookie not seen as authenticated on the raw fetch). A bogus id returns
    "not found", so the profile IS loadable; purely the delegate withholding it. Low priority (the
-   custom XAF view is meant to be the in-app surface, once #1 is fixed).
-3. Dark-theme variant not exercised (only light theme).
+   custom XAF view is the in-app surface, and it now works).
+2. Dark-theme variant not exercised (only light theme).
 
 ## Code-review items to fix before the WLNCentral port-back
 
@@ -64,12 +75,10 @@ but UNVERIFIED (see Open Bugs #1).
 
 ## Next steps (suggested order)
 
-1. Fix Open Bug #1 (`DataAccessMode=Client`), verify the grid actually shows rows.
-2. Then the code-review items above.
-3. `finishing-a-development-branch`: early commits were duplicated/amended during parallel-agent
-   races (`19eaa3a`/`3ba3959`, `99dfc76`/`85393cc`) — consider squashing before any PR.
-4. Port the proven circuit-capture + `SqlServerStorage` + DB-bootstrap pattern back to the
-   WLNCentral `Profile` branch (replacing its deferred items). Carry the findings above.
+1. ~~Fix Open Bug #1 (ProfileSummary empty grid).~~ **DONE 2026-05-31** — see "ProfileSummary fix".
+2. The code-review items above (sync-over-async stop, null connection-string guard, ILogger).
+3. Port the proven circuit-capture + `SqlServerStorage` + DB-bootstrap pattern + the three-part
+   non-persistent-ListView fix back to the WLNCentral `Profile` branch. Carry the findings above.
 
 ## Key files
 

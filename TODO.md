@@ -5,8 +5,8 @@ Tracking the MiniProfiler POC. Design:
 
 **Status: core POC proven (2026-05-31).** Circuit capture (Layer B) + SQL storage (Layer C)
 verified at the data layer (SQL store = ground truth). The custom **ProfileSummary XAF view
-still renders EMPTY** (open — see Layer C) and the built-in `/profiler/results` UI is
-auth-blocked. Dark-theme not exercised.
+now RENDERS (100 rows), fixed 2026-05-31** (see Layer C). The built-in `/profiler/results` UI
+is still auth-blocked. Dark-theme not exercised.
 
 ## Demo domain
 - [x] `Customer` / `Order` / `OrderLine` XAF EF Core entities (`BusinessObjects/Demo/`)
@@ -37,19 +37,21 @@ auth-blocked. Dark-theme not exercised.
 - [x] Configure `SqlServerStorage` (`MiniProfiler.Providers.SqlServer` 4.3.8)
 - [x] Profiler tables bootstrapped by `ProfilerStorageInitializer` (creates DB if absent, then tables)
 - [x] Profiles persist in SQL across app shutdown (count holds with app stopped)
-- [x] Custom read-only XAF view (`ProfileSummary` + `ProfileSummaryController`) — CODE complete,
-      reads from the same `SqlServerStorage` that holds the verified profiles.
-- [ ] **`ProfileSummary` view RENDER still EMPTY / unconfirmed.** When run in Visual Studio the
-      grid shows "No data to display". Instrumentation (now reverted) proved the real behaviour:
-      `OnActivated` runs, the ObjectSpace IS a `NonPersistentObjectSpace`, the handler IS
-      subscribed — but **`ObjectsGetting` never fires**, so 0 rows. (This means the earlier
-      "derived from BaseObject" theory was WRONG — it was already non-persistent.) The POCO +
-      `CreateObject<T>()` change (commit 87a6e76) is good practice but did NOT fix it.
-      **Likely real cause (per DX docs, UNVERIFIED):** in XAF **Blazor**, non-persistent
-      ListViews need **DataAccessMode = Client**; the default mode doesn't raise `ObjectsGetting`.
-      Fix candidate: set the `ProfileSummary_ListView` model node `DataAccessMode=Client`
-      (Model.xafml) — not yet applied or tested. Per your call, stopping here rather than
-      attempting another unverified fix.
+- [x] Custom read-only XAF view (`ProfileSummary` + `ProfileSummaryController`) — reads from the
+      same `SqlServerStorage` that holds the verified profiles.
+- [x] **`ProfileSummary` view RENDERS — FIXED & VERIFIED (2026-05-31).** Grid went from empty →
+      100 rows of real profile data; one row GUID cross-checked against `MiniProfilers` in SQL.
+      Root cause was THREE things together (all required):
+      1. `DataAccessMode=Client` on `ProfileSummary_ListView` (Model.xafml). Blazor's default is
+         **Queryable**, which never raises `ObjectsGetting` for a storeless type.
+      2. Key must use `DevExpress.ExpressApp.Data.Key`, NOT the EF Core `DataAnnotations.Key`
+         (XAF's non-persistent key detection ignores the latter; error 1037 otherwise).
+      3. Subscribe `ObjectsGetting`/`ObjectByKeyGetting` via `XafApplication.ObjectSpaceCreated`
+         from a `WindowController` (TargetWindowType=Main) — NOT a per-view ViewController's
+         `OnActivated`. The collection source requests objects during view creation, before
+         per-view controllers activate, so OnActivated subscription was always too late.
+      The earlier "BaseObject" theory was a red herring; POCO + `CreateObject<T>()` is correct
+      practice but was never the cause.
 
 ## Verification
 - [x] `dotnet build XAFProfiler.slnx` clean (0/0)
@@ -64,16 +66,19 @@ auth-blocked. Dark-theme not exercised.
       shell (no profiler data served). Flag restored to true.
 - [ ] Built-in `/profiler/results?id=<real id>` renders in-browser — currently returns **"hidden"**
       (the `ResultsAuthorize` delegate; a bogus id returns "not found", so the profile IS loadable).
-- [ ] `ProfileSummary` XAF view render — STILL EMPTY (see Layer C; candidate fix DataAccessMode=Client, untested)
+- [x] `ProfileSummary` XAF view render — RENDERS 100 rows, verified vs SQL store (see Layer C)
 - [ ] Dark-theme variant (only light theme verified)
 
 ## Known findings (document for the port-back)
-- **ProfileSummary empty grid — UNRESOLVED.** Instrumentation showed it IS a
-  NonPersistentObjectSpace with the handler subscribed, yet `ObjectsGetting` never fires (0 rows).
-  Likely cause per DX docs: XAF Blazor non-persistent ListViews need **DataAccessMode=Client**
-  (untested candidate fix on `ProfileSummary_ListView` in Model.xafml). The "use a POCO not a
-  persistent base + `CreateObject<T>()`" guidance (DX 113711) is also correct and was applied,
-  but it was NOT the cause here.
+- **ProfileSummary empty grid — RESOLVED (2026-05-31).** A Blazor non-persistent ListView needs
+  THREE things together, or it silently shows no data: (1) `DataAccessMode=Client` on the
+  ListView model node (Blazor defaults to Queryable, which never raises `ObjectsGetting`);
+  (2) a `DevExpress.ExpressApp.Data.Key` on the key property (NOT EF Core `DataAnnotations.Key`);
+  (3) subscribe `ObjectsGetting`/`ObjectByKeyGetting` via `XafApplication.ObjectSpaceCreated`
+  from a `WindowController`, NOT a per-view ViewController's `OnActivated` (the collection source
+  requests objects during view creation, before per-view controllers activate). The POCO +
+  `CreateObject<T>()` guidance (DX 113711) is correct but was never the cause. **Carry all three
+  to the WLNCentral port-back.**
 - **Startup DB ordering:** `EnsureTables` must create the app DB itself (XAF creates it lazily,
   after host start). Fixed in `ProfilerStorageInitializer` via a `master` connection.
 - **Built-in MiniProfiler UI blocked under XAF auth:** `/profiler/results-index` "Unauthorized",
