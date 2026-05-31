@@ -38,6 +38,7 @@ namespace XAFProfiler.Blazor.Server.Services
                 ? sqlTimings.Max(t => t.DurationMs)
                 : 0d;
 
+            MarkExisting(npos, summary);
             return summary;
         }
 
@@ -51,17 +52,30 @@ namespace XAFProfiler.Blazor.Server.Services
         /// </summary>
         public static ProfileSummary BuildDetail(NonPersistentObjectSpace npos, MiniProfiler profiler)
         {
-            var sqlTimings = CollectSqlTimings(profiler);
+            var summary = BuildSummary(npos, profiler);
+            summary.Queries = BuildQueries(npos, profiler);
+            MarkExisting(npos, summary);
+            return summary;
+        }
 
-            var summary = npos.CreateObject<ProfileSummary>();
-            summary.Id = profiler.Id;
-            summary.Operation = profiler.Name;
-            summary.Started = profiler.Started;
-            summary.DurationMs = (double)profiler.DurationMilliseconds;
-            summary.QueryCount = sqlTimings.Count;
-            summary.SlowestQueryMs = sqlTimings.Count > 0
-                ? sqlTimings.Max(t => t.DurationMs)
-                : 0d;
+        /// <summary>
+        /// Builds the grouped <see cref="ProfileQuery"/> rows for a profiler, ordered by total
+        /// duration descending. Each row's <see cref="ProfileQuery.DurationMs"/> is the summed
+        /// duration across executions, so a query run 10×5ms outranks a single 45ms query.
+        /// SQL timings with the same command text are grouped; <see cref="ProfileQuery.ExecuteCount"/>
+        /// reflects how many times that query ran (the N+1 signal).
+        ///
+        /// Exposed so a DetailView controller can populate <see cref="ProfileSummary.Queries"/> on
+        /// the object that XAF actually shows. When a DetailView is opened by double-clicking a
+        /// ListView row, XAF reuses the ListView's object (built by <see cref="BuildSummary"/>,
+        /// which leaves Queries empty) instead of re-fetching it via ObjectByKeyGetting/BuildDetail.
+        /// See https://docs.devexpress.com/eXpressAppFramework/401747 ("when you open a Detail View
+        /// from a List View ... the Obj argument is set to the object from the List View's Object
+        /// Space").
+        /// </summary>
+        public static IList<ProfileQuery> BuildQueries(NonPersistentObjectSpace npos, MiniProfiler profiler)
+        {
+            var sqlTimings = CollectSqlTimings(profiler);
 
             // Group by command text, order by total duration desc.
             var queries = sqlTimings
@@ -73,16 +87,33 @@ namespace XAFProfiler.Blazor.Server.Services
                     query.Sql = g.Key.Length > 0 ? g.Key : null;
                     query.DurationMs = g.Sum(t => t.DurationMs);
                     query.ExecuteCount = g.Count();
+                    MarkExisting(npos, query);
                     return query;
                 })
                 .OrderByDescending(q => q.DurationMs)
                 .ToList();
 
-            summary.Queries = queries;
-            return summary;
+            return queries;
         }
 
         // ── Private helpers ──────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Marks a freshly <see cref="NonPersistentObjectSpace.CreateObject{T}"/>'d object as an
+        /// existing (already-saved), unmodified object rather than a new one.
+        ///
+        /// CreateObject registers the object in the space's modified/new set, so XAF treats it as
+        /// a brand-new record. Opening its DetailView via the default ListView double-click path
+        /// (ListViewProcessCurrentObjectController.ShowObjectCore) then throws
+        /// "An error with number 1057 has occurred. A newly created record cannot be shown until
+        /// it is saved." These projections are read-only views of already-completed profiler data,
+        /// so removing them from the modified set is the framework-sanctioned fix.
+        /// See https://docs.devexpress.com/eXpressAppFramework/113471 (CreateObject marks objects
+        /// new; call RemoveFromModifiedObjects to mark them existing/unchanged) and the
+        /// NonPersistentObjectActivatorController example in DevExpress-Examples.
+        /// </summary>
+        private static void MarkExisting(NonPersistentObjectSpace npos, object obj)
+            => npos.RemoveFromModifiedObjects(obj);
 
         /// <summary>
         /// Walks the entire timing tree starting at <see cref="MiniProfiler.Root"/> and returns

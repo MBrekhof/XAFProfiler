@@ -1,9 +1,12 @@
 #nullable enable
 using System.ComponentModel;
 using DevExpress.ExpressApp;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using StackExchange.Profiling;
 using StackExchange.Profiling.Storage;
 using XAFProfiler.Blazor.Server.BusinessObjects;
+using XAFProfiler.Blazor.Server.Services;
 
 namespace XAFProfiler.Blazor.Server.Controllers
 {
@@ -31,6 +34,8 @@ namespace XAFProfiler.Blazor.Server.Controllers
     /// </summary>
     public sealed class ProfileSummaryController : WindowController
     {
+        private ILogger<ProfileSummaryController>? _logger;
+
         public ProfileSummaryController()
         {
             // Subscribe once, on the main window, for the whole application lifetime.
@@ -40,12 +45,14 @@ namespace XAFProfiler.Blazor.Server.Controllers
         protected override void OnActivated()
         {
             base.OnActivated();
+            _logger = Application.ServiceProvider?.GetService<ILogger<ProfileSummaryController>>();
             Application.ObjectSpaceCreated += Application_ObjectSpaceCreated;
         }
 
         protected override void OnDeactivated()
         {
             Application.ObjectSpaceCreated -= Application_ObjectSpaceCreated;
+            _logger = null;
             base.OnDeactivated();
         }
 
@@ -73,19 +80,6 @@ namespace XAFProfiler.Blazor.Server.Controllers
         // The storage configured in Startup's AddMiniProfiler (SqlServerStorage).
         private static IAsyncStorage? GetStorage() => MiniProfiler.DefaultOptions?.Storage;
 
-        // Non-persistent objects must be created THROUGH the object space that requested them
-        // (npos.CreateObject<T>()), not via `new`, so XAF tracks/binds them correctly and we
-        // avoid error 1021 ("object belongs to another ObjectSpace").
-        private static ProfileSummary ToSummary(NonPersistentObjectSpace npos, MiniProfiler profiler)
-        {
-            var s = npos.CreateObject<ProfileSummary>();
-            s.Id = profiler.Id;
-            s.Operation = profiler.Name;
-            s.Started = profiler.Started;
-            s.DurationMs = (double)profiler.DurationMilliseconds;
-            return s;
-        }
-
         private void ObjectSpace_ObjectsGetting(object? sender, ObjectsGettingEventArgs e)
         {
             // Fired for any non-persistent type — only handle ours.
@@ -101,18 +95,21 @@ namespace XAFProfiler.Blazor.Server.Controllers
             {
                 try
                 {
-                    foreach (var id in storage.List(100))
+                    // List newest-first (Descending is the IAsyncStorage default; stated
+                    // explicitly so the grid order does not silently change if it ever shifts).
+                    foreach (var id in storage.List(200, orderBy: ListResultsOrder.Descending))
                     {
                         var profiler = storage.Load(id);
                         if (profiler != null)
                         {
-                            list.Add(ToSummary(npos, profiler));
+                            // List rows: summary projection only (no Queries collection).
+                            list.Add(ProfileProjection.BuildSummary(npos, profiler));
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[ProfileSummaryController] Failed to load profiles: {ex.Message}");
+                    _logger?.LogError(ex, "Failed to load MiniProfiler results for the ProfileSummary list view.");
                 }
             }
             e.Objects = list;
@@ -122,10 +119,18 @@ namespace XAFProfiler.Blazor.Server.Controllers
         {
             if (e.ObjectType == typeof(ProfileSummary) && e.Key is Guid id)
             {
-                var profiler = GetStorage()?.Load(id);
-                if (profiler != null)
+                try
                 {
-                    e.Object = ToSummary((NonPersistentObjectSpace)sender!, profiler);
+                    var profiler = GetStorage()?.Load(id);
+                    if (profiler != null)
+                    {
+                        // Detail row: full projection so the opened DetailView shows its Queries.
+                        e.Object = ProfileProjection.BuildDetail((NonPersistentObjectSpace)sender!, profiler);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogError(ex, "Failed to load MiniProfiler result {ProfilerId} for the ProfileSummary detail view.", id);
                 }
             }
         }
